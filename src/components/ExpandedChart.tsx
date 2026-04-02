@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { X, BarChart3, TrendingUp, ZoomIn, ZoomOut, RotateCcw, ChevronDown } from 'lucide-react';
 import { useWatchlistStore } from '@/store/useWatchlistStore';
@@ -33,7 +33,6 @@ function calculateMA(data: number[], period: number): (number | null)[] {
   return result;
 }
 
-// Longer history ranges for scroll-back
 const EXTENDED_RANGES: Record<string, string> = {
   '1D': '5d',
   '1W': '1mo',
@@ -41,6 +40,22 @@ const EXTENDED_RANGES: Record<string, string> = {
   '3M': '1y',
   '1Y': '5y',
 };
+
+// Currency helper
+function getCurrencySymbol(ticker: string): string {
+  if (ticker.endsWith('.KS') || ticker.endsWith('.KQ')) return '₩';
+  if (ticker.endsWith('.T')) return '¥';
+  if (ticker.endsWith('.HK')) return 'HK$';
+  if (ticker.endsWith('.L')) return '£';
+  if (ticker.endsWith('.DE') || ticker.endsWith('.PA')) return '€';
+  if (ticker.endsWith('.SZ') || ticker.endsWith('.SS')) return '¥';
+  return '$';
+}
+
+function formatPrice(value: number, currency: string): string {
+  if (currency === '₩') return currency + Math.round(value).toLocaleString();
+  return currency + value.toFixed(2);
+}
 
 export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const t = useTranslations('chart');
@@ -54,29 +69,33 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const [targetInput, setTargetInput] = useState(stock?.targetPrice?.toString() || '');
   const [activeMAs, setActiveMAs] = useState<Set<number>>(new Set([5, 20]));
   const [chartType, setChartType] = useState<'candle' | 'line'>('candle');
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [showMAControls, setShowMAControls] = useState(false);
   const [loading, setLoading] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Default MA controls visible on desktop
+  // Use state instead of ref so React tracks changes properly
+  const [allData, setAllData] = useState<HistoricalDataPoint[]>([]);
+  const [viewStart, setViewStart] = useState(0);
+  const [viewCount, setViewCount] = useState(0);
+
+  // Drag state via refs (don't need re-render)
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, viewStart: 0 });
+  const pinchStartRef = useRef({ dist: 0, viewCount: 0 });
+  // Keep latest viewStart/viewCount in refs for event handlers
+  const viewRef = useRef({ start: 0, count: 0, total: 0 });
+
+  const curr = getCurrencySymbol(ticker);
+
   useEffect(() => {
     setShowMAControls(window.innerWidth >= 640);
   }, []);
 
-  // Viewport state: which slice of data is visible
-  const [viewStart, setViewStart] = useState(0); // index of first visible bar
-  const [viewCount, setViewCount] = useState(0); // number of visible bars
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ x: 0, viewStart: 0 });
-  const pinchStartRef = useRef({ dist: 0, viewCount: 0 });
-  const allDataRef = useRef<HistoricalDataPoint[]>([]);
-
-  // Load primary data
+  // Load data
   useEffect(() => {
     setLoading(true);
     fetchHistoricalData(ticker, range).then(data => {
       setHistoryData(data);
-      // Also fetch extended data for scroll-back
       const extRange = EXTENDED_RANGES[range];
       if (extRange) {
         fetchHistoricalData(ticker, extRange).then(ext => {
@@ -89,104 +108,124 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     }).catch(() => setLoading(false));
   }, [ticker, range]);
 
-  // Merge extended + primary data (extended has older data)
+  // Merge data
   useEffect(() => {
-    let merged: HistoricalDataPoint[];
-    if (extendedData.length > historyData.length) {
-      merged = extendedData;
-    } else {
-      merged = historyData;
-    }
-    allDataRef.current = merged;
-    // Default view: show the last N bars (same as original range)
-    const defaultCount = Math.min(historyData.length, merged.length);
-    setViewCount(defaultCount > 0 ? defaultCount : merged.length);
-    setViewStart(Math.max(0, merged.length - (defaultCount > 0 ? defaultCount : merged.length)));
+    const merged = extendedData.length > historyData.length ? extendedData : historyData;
+    setAllData(merged);
+    const defaultCount = Math.min(historyData.length || merged.length, merged.length);
+    const count = defaultCount > 0 ? defaultCount : merged.length;
+    const start = Math.max(0, merged.length - count);
+    setViewCount(count);
+    setViewStart(start);
+    viewRef.current = { start, count, total: merged.length };
   }, [historyData, extendedData]);
 
-  const allData = allDataRef.current;
-  const minViewCount = 10;
-  const maxViewCount = allData.length;
+  // Keep ref in sync
+  useEffect(() => {
+    viewRef.current = { start: viewStart, count: viewCount, total: allData.length };
+  }, [viewStart, viewCount, allData.length]);
 
-  // Clamp helpers
-  const clampView = useCallback((start: number, count: number) => {
-    const c = Math.max(minViewCount, Math.min(count, maxViewCount));
-    const s = Math.max(0, Math.min(start, allData.length - c));
-    return { start: s, count: c };
-  }, [allData.length, maxViewCount]);
+  const clampAndSet = (start: number, count: number) => {
+    const total = viewRef.current.total;
+    const c = Math.max(10, Math.min(count, total));
+    const s = Math.max(0, Math.min(start, total - c));
+    setViewStart(s);
+    setViewCount(c);
+  };
 
-  // Zoom in/out
-  const zoom = useCallback((factor: number, centerRatio = 0.5) => {
-    const newCount = Math.round(viewCount * factor);
-    const centerIdx = viewStart + viewCount * centerRatio;
-    const newStart = Math.round(centerIdx - newCount * centerRatio);
-    const clamped = clampView(newStart, newCount);
-    setViewStart(clamped.start);
-    setViewCount(clamped.count);
-  }, [viewCount, viewStart, clampView]);
+  const handleZoom = (factor: number) => {
+    const { start, count } = viewRef.current;
+    const newCount = Math.round(count * factor);
+    const center = start + count / 2;
+    const newStart = Math.round(center - newCount / 2);
+    clampAndSet(newStart, newCount);
+  };
 
-  const resetView = useCallback(() => {
-    const defaultCount = historyData.length || allData.length;
-    setViewCount(defaultCount);
-    setViewStart(Math.max(0, allData.length - defaultCount));
-  }, [historyData.length, allData.length]);
+  const handleReset = () => {
+    const total = viewRef.current.total;
+    const defaultCount = historyData.length || total;
+    clampAndSet(Math.max(0, total - defaultCount), defaultCount);
+  };
 
-  // Mouse/touch handlers for pan and pinch
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    setIsDragging(true);
-    dragStartRef.current = { x: e.clientX, viewStart };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }, [viewStart]);
-
-  const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDragging) return;
+  // Pointer events for drag — use native events to avoid stale closures
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dx = e.clientX - dragStartRef.current.x;
-    const pxPerBar = canvas.getBoundingClientRect().width / viewCount;
-    const barShift = Math.round(-dx / pxPerBar);
-    const newStart = dragStartRef.current.viewStart + barShift;
-    const clamped = clampView(newStart, viewCount);
-    setViewStart(clamped.start);
-  }, [isDragging, viewCount, clampView]);
 
-  const handlePointerUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
+    const onPointerDown = (e: PointerEvent) => {
+      isDraggingRef.current = true;
+      dragStartRef.current = { x: e.clientX, viewStart: viewRef.current.start };
+      canvas.setPointerCapture(e.pointerId);
+    };
 
-  // Wheel zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const centerRatio = (e.clientX - rect.left) / rect.width;
-    const factor = e.deltaY > 0 ? 1.15 : 0.87;
-    zoom(factor, centerRatio);
-  }, [zoom]);
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      const dx = e.clientX - dragStartRef.current.x;
+      const pxPerBar = canvas.getBoundingClientRect().width / viewRef.current.count;
+      const barShift = Math.round(-dx / pxPerBar);
+      const newStart = dragStartRef.current.viewStart + barShift;
+      clampAndSet(newStart, viewRef.current.count);
+    };
 
-  // Touch pinch zoom
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      pinchStartRef.current = { dist: Math.sqrt(dx * dx + dy * dy), viewCount };
-    }
-  }, [viewCount]);
+    const onPointerUp = () => {
+      isDraggingRef.current = false;
+    };
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const scale = pinchStartRef.current.dist / dist;
-      const newCount = Math.round(pinchStartRef.current.viewCount * scale);
-      const clamped = clampView(viewStart + Math.round((viewCount - newCount) / 2), newCount);
-      setViewStart(clamped.start);
-      setViewCount(clamped.count);
-    }
-  }, [viewStart, viewCount, clampView]);
+      const rect = canvas.getBoundingClientRect();
+      const centerRatio = (e.clientX - rect.left) / rect.width;
+      const factor = e.deltaY > 0 ? 1.15 : 0.87;
+      const { start, count } = viewRef.current;
+      const newCount = Math.round(count * factor);
+      const centerIdx = start + count * centerRatio;
+      const newStart = Math.round(centerIdx - newCount * centerRatio);
+      clampAndSet(newStart, newCount);
+    };
+
+    let pinchDist = 0;
+    let pinchCount = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        pinchDist = Math.sqrt(dx * dx + dy * dy);
+        pinchCount = viewRef.current.count;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchDist > 0) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const scale = pinchDist / dist;
+        const newCount = Math.round(pinchCount * scale);
+        const { start, count } = viewRef.current;
+        clampAndSet(start + Math.round((count - newCount) / 2), newCount);
+      }
+    };
+
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('touchstart', onTouchStart, { passive: true });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [allData]); // re-attach when data changes
 
   const toggleMA = (period: number) => {
     setActiveMAs(prev => {
@@ -214,13 +253,11 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     const w = rect.width;
     const h = rect.height;
 
-    // Visible slice
     const visibleData = allData.slice(viewStart, viewStart + viewCount);
     const n = visibleData.length;
     if (n < 2) return;
 
     const closePrices = visibleData.map(d => d.close);
-    // Use all close prices for MA calculation (not just visible)
     const allClosePrices = allData.map(d => d.close);
 
     const allLows = visibleData.map(d => d.low || d.close).filter(v => v > 0);
@@ -233,40 +270,35 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     const chartTop = 8;
     const chartBottom = h * 0.85;
     const chartH = chartBottom - chartTop;
-
     const priceToY = (p: number) => chartBottom - ((p - minP) / rangeP) * chartH;
 
     ctx.clearRect(0, 0, w, h);
 
-    // Grid lines
+    // Grid
     ctx.strokeStyle = '#2a2f3e';
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= 4; i++) {
       const y = chartTop + (i / 4) * chartH;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
       ctx.fillStyle = '#94a3b8';
       ctx.font = '10px Inter, sans-serif';
-      ctx.fillText('$' + (maxP - (i / 4) * rangeP).toFixed(2), 4, y - 3);
+      ctx.fillText(formatPrice(maxP - (i / 4) * rangeP, curr), 4, y - 3);
     }
 
-    // Date labels at bottom of chart area
+    // Date labels
     ctx.fillStyle = '#64748b';
     ctx.font = '9px Inter, sans-serif';
     const labelInterval = Math.max(1, Math.floor(n / 6));
     for (let i = 0; i < n; i += labelInterval) {
       const x = ((i + 0.5) / n) * w;
-      const d = visibleData[i];
-      const dateStr = d.time.length > 10 ? d.time.slice(11, 16) : d.time.slice(5);
+      const dateStr = visibleData[i].time.length > 10 ? visibleData[i].time.slice(11, 16) : visibleData[i].time.slice(5);
       ctx.fillText(dateStr, x - 15, chartBottom + 12);
     }
 
     const candleSpacing = w / n;
     const candleW = Math.max(1, Math.min(candleSpacing * 0.6, 20));
 
-    // Moving Averages (calculated from all data, drawn for visible portion)
+    // MA lines
     for (const period of MA_PERIODS) {
       if (!activeMAs.has(period)) continue;
       const maData = calculateMA(allClosePrices, period);
@@ -276,10 +308,9 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.globalAlpha = 0.8;
       let started = false;
       for (let i = 0; i < n; i++) {
-        const dataIdx = viewStart + i;
-        const val = maData[dataIdx];
+        const val = maData[viewStart + i];
         if (val === null || val === undefined) continue;
-        if (val < minP * 0.95 || val > maxP * 1.05) continue; // skip if way out of range
+        if (val < minP * 0.95 || val > maxP * 1.05) continue;
         const x = ((i + 0.5) / n) * w;
         const y = priceToY(val);
         if (!started) { ctx.moveTo(x, y); started = true; }
@@ -306,13 +337,11 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
         ctx.fillStyle = bullish ? '#4ade80' : '#f87171';
         ctx.lineWidth = 1;
 
-        // Wick
         ctx.beginPath();
         ctx.moveTo(x, priceToY(high));
         ctx.lineTo(x, priceToY(low));
         ctx.stroke();
 
-        // Body
         if (bodyH <= 1) {
           ctx.beginPath();
           ctx.moveTo(x - candleW / 2, bodyTop);
@@ -323,20 +352,18 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
         }
       });
     } else {
-      const isUp = closePrices[closePrices.length - 1] >= closePrices[0];
+      const isUpLine = closePrices[closePrices.length - 1] >= closePrices[0];
       ctx.beginPath();
-      ctx.strokeStyle = isUp ? '#4ade80' : '#f87171';
+      ctx.strokeStyle = isUpLine ? '#4ade80' : '#f87171';
       ctx.lineWidth = 2;
       closePrices.forEach((p, i) => {
         const x = ((i + 0.5) / n) * w;
         const y = priceToY(p);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       });
       ctx.stroke();
-
       const gradient = ctx.createLinearGradient(0, 0, 0, chartBottom);
-      gradient.addColorStop(0, isUp ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)');
+      gradient.addColorStop(0, isUpLine ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)');
       gradient.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.lineTo(((n - 0.5) / n) * w, chartBottom);
       ctx.lineTo((0.5 / n) * w, chartBottom);
@@ -348,11 +375,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     // Target line
     if (targetPrice) {
       const inRange = targetPrice >= minP && targetPrice <= maxP;
-      let targetY: number;
-      if (inRange) targetY = priceToY(targetPrice);
-      else if (targetPrice > maxP) targetY = chartTop + 4;
-      else targetY = chartBottom - 4;
-
+      const targetY = inRange ? priceToY(targetPrice) : targetPrice > maxP ? chartTop + 4 : chartBottom - 4;
       ctx.beginPath();
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1.5;
@@ -361,24 +384,22 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.lineTo(w, targetY);
       ctx.stroke();
       ctx.setLineDash([]);
-
       const arrow = targetPrice > maxP ? ' ↑' : targetPrice < minP ? ' ↓' : '';
-      const label = `Target: $${targetPrice.toFixed(2)}${arrow}`;
+      const label = `Target: ${formatPrice(targetPrice, curr)}${arrow}`;
       ctx.font = 'bold 11px Inter, sans-serif';
-      const textW = ctx.measureText(label).width;
-      const lx = w - textW - 10;
+      const tw = ctx.measureText(label).width;
+      const lx = w - tw - 10;
       const ly = targetPrice > maxP ? targetY + 14 : targetY - 5;
       ctx.fillStyle = 'rgba(239,68,68,0.15)';
-      ctx.fillRect(lx - 4, ly - 12, textW + 8, 16);
+      ctx.fillRect(lx - 4, ly - 12, tw + 8, 16);
       ctx.fillStyle = '#ef4444';
       ctx.fillText(label, lx, ly);
     }
 
-    // Volume bars
+    // Volume
     const volTop = chartBottom + 18;
     const volH = h - volTop - 2;
-    const volumes = visibleData.map(d => d.volume);
-    const maxVol = Math.max(...volumes);
+    const maxVol = Math.max(...visibleData.map(d => d.volume));
     if (maxVol > 0 && volH > 5) {
       visibleData.forEach((d, i) => {
         const x = ((i + 0.5) / n) * w;
@@ -394,13 +415,13 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       const totalW = w * 0.3;
       const barX = w * 0.35;
       const thumbW = totalW * (viewCount / allData.length);
-      const thumbX = barX + (totalW - thumbW) * (viewStart / (allData.length - viewCount));
+      const thumbX = barX + (totalW - thumbW) * (viewStart / Math.max(1, allData.length - viewCount));
       ctx.fillStyle = '#2a2f3e';
       ctx.fillRect(barX, barY, totalW, 2);
       ctx.fillStyle = '#60a5fa';
       ctx.fillRect(thumbX, barY, Math.max(thumbW, 4), 2);
     }
-  }, [allData, viewStart, viewCount, stock?.targetPrice, activeMAs, chartType]);
+  }, [allData, viewStart, viewCount, stock?.targetPrice, activeMAs, chartType, curr]);
 
   const handleSetTarget = () => {
     const value = parseFloat(targetInput);
@@ -424,7 +445,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <div className="text-2xl font-bold text-sa-text">${price.toFixed(2)}</div>
+              <div className="text-2xl font-bold text-sa-text">{formatPrice(price, curr)}</div>
               <div className={`text-sm font-medium ${isUp ? 'text-sa-up' : 'text-sa-down'}`}>
                 {isUp ? '+' : ''}{change.toFixed(2)} ({isUp ? '+' : ''}{changePercent.toFixed(2)}%)
               </div>
@@ -437,41 +458,27 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
 
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          {/* Chart type */}
           <div className="flex bg-sa-bg rounded-lg p-0.5">
-            <button onClick={() => setChartType('candle')} className={`p-1.5 rounded transition-colors ${chartType === 'candle' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`} title="Candlestick">
-              <BarChart3 className="w-4 h-4" />
-            </button>
-            <button onClick={() => setChartType('line')} className={`p-1.5 rounded transition-colors ${chartType === 'line' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`} title="Line">
-              <TrendingUp className="w-4 h-4" />
-            </button>
+            <button onClick={() => setChartType('candle')} className={`p-1.5 rounded transition-colors ${chartType === 'candle' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`}><BarChart3 className="w-4 h-4" /></button>
+            <button onClick={() => setChartType('line')} className={`p-1.5 rounded transition-colors ${chartType === 'line' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`}><TrendingUp className="w-4 h-4" /></button>
           </div>
           <div className="w-px h-5 bg-sa-border" />
-
-          {/* Time range */}
           <div className="flex gap-1">
             {['1D', '1W', '1M', '3M', '1Y'].map(r => (
-              <button key={r} onClick={() => setRange(r)} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${range === r ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`}>
-                {tTime(r)}
-              </button>
+              <button key={r} onClick={() => setRange(r)} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${range === r ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`}>{tTime(r)}</button>
             ))}
           </div>
           <div className="w-px h-5 bg-sa-border" />
-
-          {/* MA toggles — collapsible */}
           <div className="flex items-center gap-1">
             <button onClick={() => setShowMAControls(v => !v)} className={`flex items-center gap-0.5 px-2 py-1 rounded text-xs font-medium transition-colors ${showMAControls ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`}>
               MA <ChevronDown className={`w-3 h-3 transition-transform ${showMAControls ? 'rotate-180' : ''}`} />
             </button>
             {showMAControls && MA_PERIODS.map(period => (
-              <button key={period} onClick={() => toggleMA(period)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${activeMAs.has(period) ? 'text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`} style={activeMAs.has(period) ? { backgroundColor: MA_COLORS[period] } : undefined}>
-                MA{period}
-              </button>
+              <button key={period} onClick={() => toggleMA(period)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${activeMAs.has(period) ? 'text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`} style={activeMAs.has(period) ? { backgroundColor: MA_COLORS[period] } : undefined}>MA{period}</button>
             ))}
           </div>
         </div>
 
-        {/* MA Legend */}
         {activeMAs.size > 0 && (
           <div className="flex flex-wrap gap-3 mb-2 text-[10px]">
             {MA_PERIODS.filter(p => activeMAs.has(p)).map(period => (
@@ -483,43 +490,26 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           </div>
         )}
 
-        {/* Chart Canvas — interactive, with zoom overlay */}
+        {/* Chart */}
         <div className="relative mb-3">
           {loading && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-sa-card/80 rounded-lg">
+            <div className="absolute inset-0 z-10 bg-sa-card/80 rounded-lg">
               <div className="w-full h-full animate-pulse bg-gradient-to-r from-sa-bg via-sa-border/30 to-sa-bg rounded-lg" />
             </div>
           )}
-          {/* Zoom controls overlay — top-right on canvas */}
           <div className="absolute top-2 right-2 z-10 flex gap-1 bg-black/40 backdrop-blur-sm rounded-lg p-1">
-            <button onClick={() => zoom(0.7)} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Zoom In">
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={() => zoom(1.4)} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Zoom Out">
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={resetView} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Reset">
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+            <button onClick={() => handleZoom(0.7)} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Zoom In"><ZoomIn className="w-3.5 h-3.5" /></button>
+            <button onClick={() => handleZoom(1.4)} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Zoom Out"><ZoomOut className="w-3.5 h-3.5" /></button>
+            <button onClick={handleReset} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Reset"><RotateCcw className="w-3.5 h-3.5" /></button>
           </div>
-          <canvas
-            ref={canvasRef}
-            className="w-full h-64 sm:h-80 cursor-grab active:cursor-grabbing touch-none"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onWheel={handleWheel}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-          />
+          <canvas ref={canvasRef} className="w-full h-64 sm:h-80 cursor-grab active:cursor-grabbing touch-none" />
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
           {[
-            { label: t('high'), value: `$${priceData?.high?.toFixed(2) || '\u2014'}` },
-            { label: t('low'), value: `$${priceData?.low?.toFixed(2) || '\u2014'}` },
+            { label: t('high'), value: priceData?.high ? formatPrice(priceData.high, curr) : '\u2014' },
+            { label: t('low'), value: priceData?.low ? formatPrice(priceData.low, curr) : '\u2014' },
             { label: t('volume'), value: priceData?.volume?.toLocaleString() || '\u2014' },
             { label: t('marketClosed'), value: priceData?.marketOpen ? 'Open' : 'Closed' },
           ].map(stat => (
@@ -530,18 +520,16 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           ))}
         </div>
 
-        {/* Target price */}
+        {/* Target */}
         <div className="flex items-center gap-2">
           <input type="number" value={targetInput} onChange={e => setTargetInput(e.target.value)} placeholder={t('targetPrice')} className="flex-1 min-w-0 bg-sa-bg border border-sa-border rounded-lg px-3 py-2 text-sm text-sa-text outline-none focus:border-sa-accent" onKeyDown={e => e.key === 'Enter' && handleSetTarget()} />
           <button onClick={handleSetTarget} className="sa-btn-primary whitespace-nowrap flex-shrink-0">{t('setTarget')}</button>
-          {stock.targetPrice && (
-            <button onClick={() => setTargetPrice(ticker, undefined)} className="sa-btn-secondary text-sa-alert whitespace-nowrap flex-shrink-0">{t('removeTarget')}</button>
-          )}
+          {stock.targetPrice && <button onClick={() => setTargetPrice(ticker, undefined)} className="sa-btn-secondary text-sa-alert whitespace-nowrap flex-shrink-0">{t('removeTarget')}</button>}
         </div>
         {stock.targetPrice && (
           <div className="mt-2 text-xs text-sa-alert flex items-center gap-1">
             <span className="w-4 h-0 inline-block" style={{ borderTop: '1.5px dashed #ef4444' }} />
-            {t('targetPrice')}: ${stock.targetPrice.toFixed(2)}
+            {t('targetPrice')}: {formatPrice(stock.targetPrice, curr)}
             {priceData && <span className="text-sa-text-secondary ml-1">({((stock.targetPrice - priceData.price) / priceData.price * 100).toFixed(1)}%)</span>}
           </div>
         )}
