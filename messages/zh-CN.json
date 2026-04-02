@@ -46,6 +46,12 @@
     "refreshInterval": "刷新间隔",
     "seconds": "秒",
     "testSound": "测试",
+    "telegramAlerts": "电报提醒",
+    "telegramChatId": "聊天ID",
+    "telegramEnabled": "启用电报提醒",
+    "telegramHelp": "在Telegram中向@userinfobot发送消息以获取您的聊天ID",
+    "telegramTest": "发送测试",
+    "telegramTestSent": "测试消息已发送！",
     "close": "关闭"
   },
   "feedback": {

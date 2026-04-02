@@ -46,6 +46,12 @@
     "refreshInterval": "Intervalle de Rafraîchissement",
     "seconds": "secondes",
     "testSound": "Tester",
+    "telegramAlerts": "Alertes Telegram",
+    "telegramChatId": "ID de Chat",
+    "telegramEnabled": "Activer les alertes Telegram",
+    "telegramHelp": "Envoyez un message à @userinfobot sur Telegram pour obtenir votre ID de Chat",
+    "telegramTest": "Envoyer un Test",
+    "telegramTestSent": "Message test envoyé !",
     "close": "Fermer"
   },
   "feedback": {

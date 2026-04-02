@@ -46,6 +46,12 @@
     "refreshInterval": "更新間隔",
     "seconds": "秒",
     "testSound": "テスト",
+    "telegramAlerts": "テレグラムアラート",
+    "telegramChatId": "チャットID",
+    "telegramEnabled": "テレグラムアラートを有効化",
+    "telegramHelp": "テレグラムで@userinfobot にメッセージを送信してチャットIDを取得",
+    "telegramTest": "テスト送信",
+    "telegramTestSent": "テストメッセージを送信しました！",
     "close": "閉じる"
   },
   "feedback": {
