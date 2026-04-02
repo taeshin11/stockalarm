@@ -8,6 +8,8 @@ import { fetchStockPrices } from '@/lib/stockApi';
 import { checkAlerts } from '@/lib/alertEngine';
 import { collectData } from '@/lib/analytics';
 import { playAlertSound } from '@/utils/sound';
+import { sendTelegramAlert } from '@/lib/telegram';
+import { checkSmartAlerts } from '@/lib/smartAlert';
 import ChartGrid from '@/components/ChartGrid';
 import AddStockModal from '@/components/AddStockModal';
 import SettingsPanel from '@/components/SettingsPanel';
@@ -24,7 +26,7 @@ export default function HomePage() {
   const [alertsActivated, setAlertsActivated] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { stocks, prices, refreshInterval, alertSound, alertsEnabled, updatePrices, triggerAlert } = useWatchlistStore();
+  const { stocks, prices, refreshInterval, alertSound, alertsEnabled, telegramEnabled, telegramChatId, updatePrices, triggerAlert } = useWatchlistStore();
 
   const fetchPrices = useCallback(async () => {
     if (stocks.length === 0) return;
@@ -67,9 +69,36 @@ export default function HomePage() {
       if (alertsActivated) {
         playAlertSound(alertSound);
       }
+      if (telegramEnabled && telegramChatId) {
+        sendTelegramAlert(telegramChatId, alert.ticker, alert.currentPrice, alert.targetPrice, alert.type);
+      }
       collectData('alertTriggered', { ticker: alert.ticker, type: alert.type, targetPrice: alert.targetPrice, currentPrice: alert.currentPrice });
     }
-  }, [prices, stocks, alertsEnabled, alertSound, alertsActivated, triggerAlert]);
+  }, [prices, stocks, alertsEnabled, alertSound, alertsActivated, triggerAlert, telegramEnabled, telegramChatId]);
+
+  // Smart alert checking (every 60s)
+  useEffect(() => {
+    if (!alertsEnabled || stocks.length === 0) return;
+
+    const checkSmart = async () => {
+      const results = await checkSmartAlerts(stocks, prices);
+      for (const result of results) {
+        triggerAlert(result.ticker);
+        if (alertsActivated) {
+          playAlertSound(alertSound);
+        }
+      }
+    };
+
+    const smartInterval = setInterval(checkSmart, 60000);
+    // Initial check after 5s
+    const initialTimeout = setTimeout(checkSmart, 5000);
+
+    return () => {
+      clearInterval(smartInterval);
+      clearTimeout(initialTimeout);
+    };
+  }, [stocks, prices, alertsEnabled, alertsActivated, alertSound, triggerAlert]);
 
   const handleEnableAlerts = () => {
     setAlertsActivated(true);

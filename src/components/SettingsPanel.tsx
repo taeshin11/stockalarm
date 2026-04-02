@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { X } from 'lucide-react';
 import { useWatchlistStore } from '@/store/useWatchlistStore';
@@ -11,7 +12,11 @@ interface SettingsPanelProps {
 
 export default function SettingsPanel({ onClose }: SettingsPanelProps) {
   const t = useTranslations('settings');
-  const { alertSound, refreshInterval, setAlertSound, setRefreshInterval } = useWatchlistStore();
+  const {
+    alertSound, refreshInterval, setAlertSound, setRefreshInterval,
+    telegramChatId, telegramEnabled, setTelegramChatId, setTelegramEnabled,
+  } = useWatchlistStore();
+  const [telegramTestSent, setTelegramTestSent] = useState(false);
 
   const sounds = [
     { id: 'alert-1', name: 'Rising Beep' },
@@ -75,6 +80,61 @@ export default function SettingsPanel({ onClose }: SettingsPanelProps) {
                 {i}{t('seconds').charAt(0)}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Telegram Alerts */}
+        <div className="mb-6">
+          <label className="text-sm font-medium text-sa-text mb-2 block">{t('telegramAlerts')}</label>
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={telegramEnabled}
+                onChange={(e) => setTelegramEnabled(e.target.checked)}
+                className="accent-sa-accent"
+              />
+              <span className="text-sm text-sa-text">{t('telegramEnabled')}</span>
+            </label>
+            {telegramEnabled && (
+              <>
+                <div>
+                  <input
+                    type="text"
+                    value={telegramChatId}
+                    onChange={(e) => setTelegramChatId(e.target.value)}
+                    placeholder={t('telegramChatId')}
+                    className="w-full px-3 py-2 rounded-lg bg-sa-bg border border-sa-border text-sa-text text-sm focus:outline-none focus:ring-1 focus:ring-sa-accent"
+                  />
+                  <p className="text-xs text-sa-text-secondary mt-1">{t('telegramHelp')}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      if (!telegramChatId) return;
+                      try {
+                        await fetch('/api/telegram', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            chatId: telegramChatId,
+                            message: '✅ <b>StockAlarm</b>\n\nTelegram alerts are connected and working!',
+                          }),
+                        });
+                        setTelegramTestSent(true);
+                        setTimeout(() => setTelegramTestSent(false), 3000);
+                      } catch {}
+                    }}
+                    className="text-xs text-sa-accent hover:underline"
+                  >
+                    {t('telegramTest')}
+                  </button>
+                  {telegramTestSent && (
+                    <span className="text-xs text-green-500">{t('telegramTestSent')}</span>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
 

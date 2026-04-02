@@ -15,9 +15,11 @@ interface MiniChartProps {
 
 export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps) {
   const t = useTranslations('chart');
-  const { removeStock, setTargetPrice, dismissAlert } = useWatchlistStore();
+  const { removeStock, setTargetPrice, dismissAlert, setSmartAlert } = useWatchlistStore();
   const [targetInput, setTargetInput] = useState('');
   const [showTargetInput, setShowTargetInput] = useState(false);
+  const [smartAlertInput, setSmartAlertInput] = useState('');
+  const [showSmartAlert, setShowSmartAlert] = useState(false);
   const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -197,6 +199,60 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
           />
           <button onClick={handleSetTarget} className="text-xs text-sa-accent font-medium">
             {t('setTarget')}
+          </button>
+        </div>
+      )}
+
+      {/* Smart Alert */}
+      {!showSmartAlert && !stock.smartAlert && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowSmartAlert(true); }}
+          className="text-xs text-sa-accent/60 hover:text-sa-accent mt-1"
+        >
+          + AI Alert
+        </button>
+      )}
+
+      {stock.smartAlert && !showSmartAlert && (
+        <div className="flex items-center justify-between text-xs mt-1">
+          <span className="text-sa-accent/80 truncate flex-1">🤖 {stock.smartAlert}</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); setSmartAlert(stock.ticker, undefined); }}
+            className="text-sa-text-secondary hover:text-sa-alert ml-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {showSmartAlert && (
+        <div className="flex gap-2 mt-1" onClick={e => e.stopPropagation()}>
+          <input
+            type="text"
+            value={smartAlertInput}
+            onChange={(e) => setSmartAlertInput(e.target.value)}
+            placeholder="e.g. when price drops 3%"
+            className="flex-1 bg-sa-bg border border-sa-border rounded px-2 py-1 text-xs text-sa-text outline-none focus:border-sa-accent"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && smartAlertInput.trim()) {
+                setSmartAlert(stock.ticker, smartAlertInput.trim());
+                setShowSmartAlert(false);
+                setSmartAlertInput('');
+              }
+            }}
+          />
+          <button
+            onClick={() => {
+              if (smartAlertInput.trim()) {
+                setSmartAlert(stock.ticker, smartAlertInput.trim());
+                setShowSmartAlert(false);
+                setSmartAlertInput('');
+              }
+            }}
+            className="text-xs text-sa-accent"
+          >
+            Set
           </button>
         </div>
       )}

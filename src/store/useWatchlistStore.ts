@@ -13,6 +13,8 @@ export interface WatchlistStock {
   alertTriggered: boolean;
   alertDismissed: boolean;
   lastAlertTime?: number;
+  smartAlert?: string; // natural language condition
+  smartAlertTriggered?: boolean;
 }
 
 export interface PriceData {
@@ -33,6 +35,8 @@ interface WatchlistState {
   refreshInterval: number;
   alertSound: string;
   alertsEnabled: boolean;
+  telegramChatId: string;
+  telegramEnabled: boolean;
 
   addStock: (ticker: string, name: string) => void;
   removeStock: (ticker: string) => void;
@@ -43,6 +47,10 @@ interface WatchlistState {
   setRefreshInterval: (interval: number) => void;
   setAlertSound: (sound: string) => void;
   setAlertsEnabled: (enabled: boolean) => void;
+  setTelegramChatId: (id: string) => void;
+  setTelegramEnabled: (enabled: boolean) => void;
+  setSmartAlert: (ticker: string, prompt: string | undefined) => void;
+  triggerSmartAlert: (ticker: string) => void;
 }
 
 export const useWatchlistStore = create<WatchlistState>()(
@@ -53,6 +61,8 @@ export const useWatchlistStore = create<WatchlistState>()(
       refreshInterval: 30,
       alertSound: 'alert-1',
       alertsEnabled: true,
+      telegramChatId: '',
+      telegramEnabled: false,
 
       addStock: (ticker, name) => {
         const { stocks } = get();
@@ -98,6 +108,23 @@ export const useWatchlistStore = create<WatchlistState>()(
       setRefreshInterval: (interval) => set({ refreshInterval: interval }),
       setAlertSound: (sound) => set({ alertSound: sound }),
       setAlertsEnabled: (enabled) => set({ alertsEnabled: enabled }),
+      setTelegramChatId: (id) => set({ telegramChatId: id }),
+      setTelegramEnabled: (enabled) => set({ telegramEnabled: enabled }),
+
+      setSmartAlert: (ticker, prompt) => {
+        set({
+          stocks: get().stocks.map(s =>
+            s.ticker === ticker ? { ...s, smartAlert: prompt, smartAlertTriggered: false } : s
+          ),
+        });
+      },
+      triggerSmartAlert: (ticker) => {
+        set({
+          stocks: get().stocks.map(s =>
+            s.ticker === ticker ? { ...s, smartAlertTriggered: true } : s
+          ),
+        });
+      },
     }),
     {
       name: 'stockalarm-watchlist',
@@ -106,6 +133,8 @@ export const useWatchlistStore = create<WatchlistState>()(
         refreshInterval: state.refreshInterval,
         alertSound: state.alertSound,
         alertsEnabled: state.alertsEnabled,
+        telegramChatId: state.telegramChatId,
+        telegramEnabled: state.telegramEnabled,
       }),
     }
   )
