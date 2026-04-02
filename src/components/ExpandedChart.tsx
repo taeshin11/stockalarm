@@ -111,6 +111,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const [loading, setLoading] = useState(false);
   const [newIndType, setNewIndType] = useState<'SMA' | 'EMA' | 'WMA'>('EMA');
   const [newIndPeriod, setNewIndPeriod] = useState('50');
+  const [dragTargetPrice, setDragTargetPrice] = useState<number | null>(null); // long-press target line
 
   // View state
   const [vStart, setVStart] = useState(0);
@@ -136,16 +137,32 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     }).catch(() => setLoading(false));
   }, [ticker, range]);
 
-  // --- Interaction via native events on canvas ---
+  // --- Chart price range for y-to-price conversion ---
+  const chartRangeRef = useRef({ minP: 0, maxP: 1, cTop: 8, cBot: 100 });
+
+  // Convert Y pixel position to price
+  const yToPrice = (clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return 0;
+    const rect = canvas.getBoundingClientRect();
+    const y = clientY - rect.top;
+    const { minP, maxP, cTop, cBot } = chartRangeRef.current;
+    const ratio = 1 - (y - cTop) / (cBot - cTop);
+    return minP + ratio * (maxP - minP);
+  };
+
+  // --- Interaction: drag to pan, long-press to set target, wheel/pinch to zoom ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || allData.length < 2) return;
 
     let dragging = false;
+    let targetMode = false; // long-press target line mode
     let startX = 0;
+    let startY = 0;
     let startVS = 0;
-
-    const getView = () => ({ s: vStart, c: vCount, total: allData.length });
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    let hasMoved = false;
 
     const clamp = (s: number, c: number) => {
       const total = allData.length;
@@ -161,23 +178,76 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     };
 
     const onDown = (e: PointerEvent) => {
-      dragging = true;
       startX = e.clientX;
-      startVS = vStart; // capture current
+      startY = e.clientY;
+      startVS = vStart;
+      hasMoved = false;
       canvas.setPointerCapture(e.pointerId);
+
+      // Start long-press timer (500ms)
+      longPressTimer = setTimeout(() => {
+        targetMode = true;
+        dragging = false;
+        // Vibrate if available
+        if (navigator.vibrate) navigator.vibrate(30);
+        // Set initial drag target price from cursor position
+        const price = yToPrice(e.clientY);
+        if (price > 0) setDragTargetPrice(price);
+      }, 500);
+
       e.preventDefault();
     };
 
     const onMove = (e: PointerEvent) => {
-      if (!dragging) return;
       const dx = e.clientX - startX;
-      const w = canvas.getBoundingClientRect().width;
-      const barsPerPx = vCount / w;
-      const shift = Math.round(-dx * barsPerPx);
-      applyView(startVS + shift, vCount);
+      const dy = e.clientY - startY;
+
+      if (!hasMoved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+        hasMoved = true;
+        // If moved before long-press fired, cancel long-press and start drag
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+        if (!targetMode) {
+          dragging = true;
+        }
+      }
+
+      if (targetMode) {
+        // Move target line vertically
+        const price = yToPrice(e.clientY);
+        if (price > 0) setDragTargetPrice(price);
+      } else if (dragging) {
+        // Pan chart
+        const w = canvas.getBoundingClientRect().width;
+        const barsPerPx = vCount / w;
+        const shift = Math.round(-dx * barsPerPx);
+        applyView(startVS + shift, vCount);
+      }
     };
 
-    const onUp = () => { dragging = false; };
+    const onUp = () => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+
+      if (targetMode) {
+        // Confirm target price
+        setDragTargetPrice(prev => {
+          if (prev && prev > 0) {
+            setTargetPrice(ticker, Math.round(prev * 100) / 100);
+            setTargetInput((Math.round(prev * 100) / 100).toString());
+          }
+          return null;
+        });
+        targetMode = false;
+      }
+
+      dragging = false;
+      hasMoved = false;
+    };
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -190,11 +260,13 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       applyView(newS, newC);
     };
 
-    // Pinch
     let pinchDist = 0;
     let pinchC = 0;
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        targetMode = false;
+        setDragTargetPrice(null);
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         pinchDist = Math.sqrt(dx * dx + dy * dy);
@@ -220,6 +292,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     canvas.addEventListener('touchstart', onTouchStart, { passive: true });
     canvas.addEventListener('touchmove', onTouchMove, { passive: false });
     return () => {
+      if (longPressTimer) clearTimeout(longPressTimer);
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
@@ -228,7 +301,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       canvas.removeEventListener('touchstart', onTouchStart);
       canvas.removeEventListener('touchmove', onTouchMove);
     };
-  }, [allData, vStart, vCount]);
+  }, [allData, vStart, vCount, ticker, setTargetPrice]);
 
   // Zoom buttons
   const zoomIn = () => {
@@ -289,6 +362,8 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     const maxP = Math.max(...highs, ...closes);
     const rng = maxP - minP || 1;
     const cTop = 8, cBot = h * 0.84, cH = cBot - cTop;
+    // Store range for yToPrice conversion
+    chartRangeRef.current = { minP, maxP, cTop, cBot };
     const p2y = (p: number) => cBot - ((p - minP) / rng) * cH;
 
     ctx.clearRect(0, 0, w, h);
@@ -385,6 +460,34 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       });
     }
 
+    // Drag target line (long-press mode)
+    if (dragTargetPrice && dragTargetPrice > 0) {
+      const dtp = dragTargetPrice;
+      const inR = dtp >= minP && dtp <= maxP;
+      const dtY = inR ? p2y(dtp) : dtp > maxP ? cTop + 2 : cBot - 2;
+      // Bright dashed line
+      ctx.beginPath();
+      ctx.strokeStyle = '#facc15'; // yellow for draft
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]);
+      ctx.moveTo(0, dtY);
+      ctx.lineTo(w, dtY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Label with background
+      const dtLabel = fmtPrice(dtp, curr);
+      ctx.font = 'bold 12px Inter,sans-serif';
+      const dtW = ctx.measureText(dtLabel).width;
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(w - dtW - 14, dtY - 10, dtW + 10, 20);
+      ctx.fillStyle = '#000';
+      ctx.fillText(dtLabel, w - dtW - 9, dtY + 4);
+      // "Release to set" hint
+      ctx.fillStyle = 'rgba(250,204,21,0.8)';
+      ctx.font = '10px Inter,sans-serif';
+      ctx.fillText('Release to set target', 10, dtY - 5);
+    }
+
     // Scroll bar
     if (allData.length > vCount) {
       const bw = w * 0.3, bx = w * 0.35;
@@ -393,7 +496,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.fillStyle = '#2a2f3e'; ctx.fillRect(bx, h - 1, bw, 2);
       ctx.fillStyle = '#60a5fa'; ctx.fillRect(tx, h - 1, Math.max(tw3, 4), 2);
     }
-  }, [allData, vStart, vCount, stock?.targetPrice, indicators, chartType, curr]);
+  }, [allData, vStart, vCount, stock?.targetPrice, indicators, chartType, curr, dragTargetPrice]);
 
   const handleSetTarget = () => {
     const v = parseFloat(targetInput);
