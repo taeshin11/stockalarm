@@ -11,6 +11,31 @@ interface ExpandedChartProps {
   onClose: () => void;
 }
 
+const MA_PERIODS = [5, 10, 20, 100, 200];
+const MA_COLORS: Record<number, string> = {
+  5: '#f59e0b',   // amber
+  10: '#8b5cf6',  // purple
+  20: '#06b6d4',  // cyan
+  100: '#f97316', // orange
+  200: '#ec4899', // pink
+};
+
+function calculateMA(data: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) {
+      result.push(null);
+    } else {
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) {
+        sum += data[j];
+      }
+      result.push(sum / period);
+    }
+  }
+  return result;
+}
+
 export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const t = useTranslations('chart');
   const tTime = useTranslations('time');
@@ -20,11 +45,21 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const [range, setRange] = useState('1M');
   const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
   const [targetInput, setTargetInput] = useState(stock?.targetPrice?.toString() || '');
+  const [activeMAs, setActiveMAs] = useState<Set<number>>(new Set([5, 20]));
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     fetchHistoricalData(ticker, range).then(setHistoryData);
   }, [ticker, range]);
+
+  const toggleMA = (period: number) => {
+    setActiveMAs(prev => {
+      const next = new Set(prev);
+      if (next.has(period)) next.delete(period);
+      else next.add(period);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -42,10 +77,19 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     const w = rect.width;
     const h = rect.height;
     const closePrices = historyData.map(d => d.close);
-    const minP = Math.min(...closePrices);
-    const maxP = Math.max(...closePrices);
+
+    // Extend price range to include target price if set
+    let minP = Math.min(...closePrices);
+    let maxP = Math.max(...closePrices);
+    const targetPrice = stock?.targetPrice;
+    if (targetPrice) {
+      minP = Math.min(minP, targetPrice * 0.995);
+      maxP = Math.max(maxP, targetPrice * 1.005);
+    }
     const rangeP = maxP - minP || 1;
     const padding = 8;
+
+    const priceToY = (p: number) => h - padding - ((p - minP) / rangeP) * (h - padding * 2);
 
     ctx.clearRect(0, 0, w, h);
 
@@ -65,6 +109,26 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.fillText('$' + priceLabel, 4, y - 3);
     }
 
+    // Moving Averages (draw before price line so price is on top)
+    for (const period of MA_PERIODS) {
+      if (!activeMAs.has(period)) continue;
+      const maData = calculateMA(closePrices, period);
+      ctx.beginPath();
+      ctx.strokeStyle = MA_COLORS[period];
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = 0.8;
+      let started = false;
+      maData.forEach((val, i) => {
+        if (val === null) return;
+        const x = (i / (closePrices.length - 1)) * w;
+        const y = priceToY(val);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     // Price line
     const isUp = closePrices[closePrices.length - 1] >= closePrices[0];
     ctx.beginPath();
@@ -73,13 +137,13 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
 
     closePrices.forEach((p, i) => {
       const x = (i / (closePrices.length - 1)) * w;
-      const y = h - padding - ((p - minP) / rangeP) * (h - padding * 2);
+      const y = priceToY(p);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.stroke();
 
-    // Gradient
+    // Gradient fill
     const gradient = ctx.createLinearGradient(0, 0, 0, h);
     gradient.addColorStop(0, isUp ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)');
     gradient.addColorStop(1, 'rgba(0,0,0,0)');
@@ -89,10 +153,9 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Target line
-    const targetPrice = stock?.targetPrice;
-    if (targetPrice && targetPrice >= minP && targetPrice <= maxP) {
-      const targetY = h - padding - ((targetPrice - minP) / rangeP) * (h - padding * 2);
+    // Target line (always visible — range extended above)
+    if (targetPrice) {
+      const targetY = priceToY(targetPrice);
       ctx.beginPath();
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1.5;
@@ -102,9 +165,16 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.fillStyle = '#ef4444';
+      // Target label with background
+      const label = `Target: $${targetPrice.toFixed(2)}`;
       ctx.font = 'bold 11px Inter, sans-serif';
-      ctx.fillText('Target: $' + targetPrice.toFixed(2), w - 120, targetY - 5);
+      const textWidth = ctx.measureText(label).width;
+      const labelX = w - textWidth - 10;
+      const labelY = targetY - 5;
+      ctx.fillStyle = 'rgba(239,68,68,0.15)';
+      ctx.fillRect(labelX - 4, labelY - 12, textWidth + 8, 16);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillText(label, labelX, labelY);
     }
 
     // Volume bars at bottom
@@ -113,12 +183,12 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       const barW = Math.max(1, w / historyData.length - 1);
       historyData.forEach((d, i) => {
         const x = (i / (historyData.length - 1)) * w;
-        const barH = (d.volume / maxVol) * h * 0.15;
-        ctx.fillStyle = d.close >= d.open ? 'rgba(74,222,128,0.3)' : 'rgba(248,113,113,0.3)';
+        const barH = (d.volume / maxVol) * h * 0.12;
+        ctx.fillStyle = d.close >= d.open ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)';
         ctx.fillRect(x - barW / 2, h - barH, barW, barH);
       });
     }
-  }, [historyData, stock?.targetPrice]);
+  }, [historyData, stock?.targetPrice, activeMAs]);
 
   const handleSetTarget = () => {
     const value = parseFloat(targetInput);
@@ -136,9 +206,9 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="sa-card w-full max-w-3xl p-6" onClick={e => e.stopPropagation()}>
+      <div className="sa-card w-full max-w-3xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-xl font-bold text-sa-text">{stock.ticker}</h2>
             <p className="text-sm text-sa-text-secondary">{stock.name}</p>
@@ -156,26 +226,57 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           </div>
         </div>
 
-        {/* Time range selector */}
-        <div className="flex gap-2 mb-4">
-          {['1D', '1W', '1M', '3M', '1Y'].map((r) => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                range === r ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'
-              }`}
-            >
-              {tTime(r)}
-            </button>
-          ))}
+        {/* Time range + MA selectors */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex gap-1">
+            {['1D', '1W', '1M', '3M', '1Y'].map((r) => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  range === r ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'
+                }`}
+              >
+                {tTime(r)}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-5 bg-sa-border mx-1" />
+          <div className="flex gap-1">
+            {MA_PERIODS.map((period) => (
+              <button
+                key={period}
+                onClick={() => toggleMA(period)}
+                className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
+                  activeMAs.has(period)
+                    ? 'text-white'
+                    : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'
+                }`}
+                style={activeMAs.has(period) ? { backgroundColor: MA_COLORS[period] } : undefined}
+              >
+                MA{period}
+              </button>
+            ))}
+          </div>
         </div>
 
+        {/* MA Legend (only show active) */}
+        {activeMAs.size > 0 && (
+          <div className="flex flex-wrap gap-3 mb-2 text-[10px]">
+            {MA_PERIODS.filter(p => activeMAs.has(p)).map(period => (
+              <span key={period} className="flex items-center gap-1">
+                <span className="w-3 h-[2px] rounded" style={{ backgroundColor: MA_COLORS[period] }} />
+                <span className="text-sa-text-secondary">MA{period}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Chart */}
-        <canvas ref={canvasRef} className="w-full h-64 sm:h-80 mb-4" />
+        <canvas ref={canvasRef} className="w-full h-56 sm:h-72 mb-3" />
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
           {[
             { label: t('high'), value: `$${priceData?.high?.toFixed(2) || '\u2014'}` },
             { label: t('low'), value: `$${priceData?.low?.toFixed(2) || '\u2014'}` },
@@ -189,28 +290,41 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           ))}
         </div>
 
-        {/* Target price */}
-        <div className="flex gap-2 items-center">
+        {/* Target price — fixed horizontal layout */}
+        <div className="flex items-center gap-2">
           <input
             type="number"
             value={targetInput}
             onChange={(e) => setTargetInput(e.target.value)}
             placeholder={t('targetPrice')}
-            className="flex-1 bg-sa-bg border border-sa-border rounded-lg px-3 py-2 text-sm text-sa-text outline-none focus:border-sa-accent"
+            className="flex-1 min-w-0 bg-sa-bg border border-sa-border rounded-lg px-3 py-2 text-sm text-sa-text outline-none focus:border-sa-accent"
             onKeyDown={(e) => e.key === 'Enter' && handleSetTarget()}
           />
-          <button onClick={handleSetTarget} className="sa-btn-primary">
+          <button onClick={handleSetTarget} className="sa-btn-primary whitespace-nowrap flex-shrink-0">
             {t('setTarget')}
           </button>
           {stock.targetPrice && (
             <button
               onClick={() => setTargetPrice(ticker, undefined)}
-              className="sa-btn-secondary text-sa-alert"
+              className="sa-btn-secondary text-sa-alert whitespace-nowrap flex-shrink-0"
             >
               {t('removeTarget')}
             </button>
           )}
         </div>
+
+        {/* Show current target if set */}
+        {stock.targetPrice && (
+          <div className="mt-2 text-xs text-sa-alert flex items-center gap-1">
+            <span className="w-4 h-[1.5px] bg-sa-alert inline-block" style={{ borderTop: '1.5px dashed #ef4444' }} />
+            {t('targetPrice')}: ${stock.targetPrice.toFixed(2)}
+            {priceData && (
+              <span className="text-sa-text-secondary ml-1">
+                ({((stock.targetPrice - priceData.price) / priceData.price * 100).toFixed(1)}%)
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

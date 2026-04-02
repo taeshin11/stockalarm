@@ -48,11 +48,17 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
 
     const w = rect.width;
     const h = rect.height;
-    const prices = historyData.map(d => d.close);
-    const minP = Math.min(...prices);
-    const maxP = Math.max(...prices);
-    const range = maxP - minP || 1;
+    const closePrices = historyData.map(d => d.close);
+    let minP = Math.min(...closePrices);
+    let maxP = Math.max(...closePrices);
+    // Extend range to always show target line
+    if (stock.targetPrice) {
+      minP = Math.min(minP, stock.targetPrice * 0.998);
+      maxP = Math.max(maxP, stock.targetPrice * 1.002);
+    }
+    const priceRange = maxP - minP || 1;
     const padding = 4;
+    const priceToY = (p: number) => h - padding - ((p - minP) / priceRange) * (h - padding * 2);
 
     // Price line
     ctx.clearRect(0, 0, w, h);
@@ -60,9 +66,9 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
     ctx.strokeStyle = isUp ? '#4ade80' : '#f87171';
     ctx.lineWidth = 1.5;
 
-    prices.forEach((p, i) => {
-      const x = (i / (prices.length - 1)) * w;
-      const y = h - padding - ((p - minP) / range) * (h - padding * 2);
+    closePrices.forEach((p, i) => {
+      const x = (i / (closePrices.length - 1)) * w;
+      const y = priceToY(p);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
@@ -78,9 +84,9 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Target line
-    if (stock.targetPrice && stock.targetPrice >= minP && stock.targetPrice <= maxP) {
-      const targetY = h - padding - ((stock.targetPrice - minP) / range) * (h - padding * 2);
+    // Target line — always visible
+    if (stock.targetPrice) {
+      const targetY = priceToY(stock.targetPrice);
       ctx.beginPath();
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1;
