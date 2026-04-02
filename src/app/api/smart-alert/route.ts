@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,31 +9,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'prompt and stockData required' }, { status: 400 });
     }
 
-    const systemPrompt = `You are a stock alert condition evaluator. Given stock data and a user's alert condition, determine if the condition is met. Respond with ONLY a JSON object: {"triggered": true/false, "reason": "brief explanation"}`;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ triggered: false, reason: 'Gemini API key not configured' });
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    const systemPrompt = `You are a stock alert condition evaluator. Given stock data and a user's alert condition, determine if the condition is met. Respond with ONLY a JSON object: {"triggered": true/false, "reason": "brief explanation"}. No markdown, no code blocks, just the JSON.`;
 
     const userMessage = `Stock data: ${JSON.stringify(stockData)}\n\nUser's alert condition: "${prompt}"\n\nIs this condition currently met?`;
 
-    const res = await fetch('https://text.pollinations.ai/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        model: 'openai',
-        jsonMode: true,
-      }),
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\n${userMessage}` }] }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 200,
+      },
     });
 
-    if (!res.ok) {
-      return NextResponse.json({ triggered: false, reason: 'AI evaluation failed' });
-    }
+    const text = result.response.text().trim();
 
-    const text = await res.text();
     try {
-      const result = JSON.parse(text);
-      return NextResponse.json(result);
+      // Try direct parse
+      const parsed = JSON.parse(text);
+      return NextResponse.json(parsed);
     } catch {
       // Try to extract JSON from response
       const match = text.match(/\{[\s\S]*?\}/);
@@ -41,7 +43,7 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json({ triggered: false, reason: 'Could not parse AI response' });
     }
-  } catch {
-    return NextResponse.json({ triggered: false, reason: 'Server error' }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ triggered: false, reason: error?.message || 'Server error' }, { status: 500 });
   }
 }
