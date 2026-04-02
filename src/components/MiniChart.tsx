@@ -167,7 +167,7 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
       {/* Price */}
       <div className="flex items-baseline gap-2 mb-2">
         <span className="text-xl font-bold text-sa-text">
-          ${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {(stock.ticker.endsWith('.KS') || stock.ticker.endsWith('.KQ')) ? '₩' + Math.round(price).toLocaleString() : '$' + price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </span>
         <span className={`text-xs font-medium ${isUp ? 'text-sa-up' : 'text-sa-down'}`}>
           {isUp ? '+' : ''}{change.toFixed(2)} ({isUp ? '+' : ''}{changePercent.toFixed(2)}%)

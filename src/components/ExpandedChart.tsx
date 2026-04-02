@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import { X, BarChart3, TrendingUp, ZoomIn, ZoomOut, RotateCcw, ChevronDown } from 'lucide-react';
+import { X, BarChart3, TrendingUp, ZoomIn, ZoomOut, RotateCcw, ChevronDown, Plus, Trash2 } from 'lucide-react';
 import { useWatchlistStore } from '@/store/useWatchlistStore';
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/stockApi';
 
@@ -11,51 +11,87 @@ interface ExpandedChartProps {
   onClose: () => void;
 }
 
-const MA_PERIODS = [5, 10, 20, 100, 200];
-const MA_COLORS: Record<number, string> = {
-  5: '#f59e0b',
-  10: '#8b5cf6',
-  20: '#06b6d4',
-  100: '#f97316',
-  200: '#ec4899',
-};
+// --- Indicator types ---
+interface Indicator {
+  id: string;
+  type: 'SMA' | 'EMA' | 'WMA';
+  period: number;
+  color: string;
+}
 
-function calculateMA(data: number[], period: number): (number | null)[] {
-  const result: (number | null)[] = [];
+const INDICATOR_COLORS = ['#f59e0b', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#10b981', '#ef4444', '#6366f1'];
+
+function calculateSMA(data: number[], period: number): (number | null)[] {
+  const r: (number | null)[] = [];
   for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) result.push(null);
-    else {
+    if (i < period - 1) { r.push(null); continue; }
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += data[j];
+    r.push(sum / period);
+  }
+  return r;
+}
+
+function calculateEMA(data: number[], period: number): (number | null)[] {
+  const r: (number | null)[] = [];
+  const k = 2 / (period + 1);
+  let ema: number | null = null;
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { r.push(null); continue; }
+    if (ema === null) {
       let sum = 0;
       for (let j = i - period + 1; j <= i; j++) sum += data[j];
-      result.push(sum / period);
+      ema = sum / period;
+    } else {
+      ema = data[i] * k + ema * (1 - k);
     }
+    r.push(ema);
   }
-  return result;
+  return r;
+}
+
+function calculateWMA(data: number[], period: number): (number | null)[] {
+  const r: (number | null)[] = [];
+  const denom = (period * (period + 1)) / 2;
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { r.push(null); continue; }
+    let sum = 0;
+    for (let j = 0; j < period; j++) sum += data[i - period + 1 + j] * (j + 1);
+    r.push(sum / denom);
+  }
+  return r;
+}
+
+function calcIndicator(data: number[], ind: Indicator): (number | null)[] {
+  switch (ind.type) {
+    case 'EMA': return calculateEMA(data, ind.period);
+    case 'WMA': return calculateWMA(data, ind.period);
+    default: return calculateSMA(data, ind.period);
+  }
 }
 
 const EXTENDED_RANGES: Record<string, string> = {
-  '1D': '5d',
-  '1W': '1mo',
-  '1M': '6mo',
-  '3M': '1y',
-  '1Y': '5y',
+  '1D': '5d', '1W': '1mo', '1M': '6mo', '3M': '1y', '1Y': '5y',
 };
 
-// Currency helper
-function getCurrencySymbol(ticker: string): string {
+function getCurrency(ticker: string): string {
   if (ticker.endsWith('.KS') || ticker.endsWith('.KQ')) return '₩';
   if (ticker.endsWith('.T')) return '¥';
   if (ticker.endsWith('.HK')) return 'HK$';
   if (ticker.endsWith('.L')) return '£';
   if (ticker.endsWith('.DE') || ticker.endsWith('.PA')) return '€';
-  if (ticker.endsWith('.SZ') || ticker.endsWith('.SS')) return '¥';
   return '$';
 }
 
-function formatPrice(value: number, currency: string): string {
-  if (currency === '₩') return currency + Math.round(value).toLocaleString();
-  return currency + value.toFixed(2);
+function fmtPrice(v: number, c: string): string {
+  return c === '₩' ? c + Math.round(v).toLocaleString() : c + v.toFixed(2);
 }
+
+// Default indicators (TradingView-like defaults)
+const DEFAULT_INDICATORS: Indicator[] = [
+  { id: '1', type: 'SMA', period: 5, color: '#f59e0b' },
+  { id: '2', type: 'SMA', period: 20, color: '#06b6d4' },
+];
 
 export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const t = useTranslations('chart');
@@ -63,184 +99,173 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const { stocks, prices, setTargetPrice } = useWatchlistStore();
   const stock = stocks.find(s => s.ticker === ticker);
   const priceData = prices[ticker];
-  const [range, setRange] = useState('1M');
-  const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
-  const [extendedData, setExtendedData] = useState<HistoricalDataPoint[]>([]);
-  const [targetInput, setTargetInput] = useState(stock?.targetPrice?.toString() || '');
-  const [activeMAs, setActiveMAs] = useState<Set<number>>(new Set([5, 20]));
-  const [chartType, setChartType] = useState<'candle' | 'line'>('candle');
-  const [showMAControls, setShowMAControls] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const curr = getCurrency(ticker);
 
-  // Use state instead of ref so React tracks changes properly
+  const [range, setRange] = useState('3M'); // default 3M so MA100/200 can show
   const [allData, setAllData] = useState<HistoricalDataPoint[]>([]);
-  const [viewStart, setViewStart] = useState(0);
-  const [viewCount, setViewCount] = useState(0);
+  const [defaultDataLen, setDefaultDataLen] = useState(0);
+  const [targetInput, setTargetInput] = useState(stock?.targetPrice?.toString() || '');
+  const [indicators, setIndicators] = useState<Indicator[]>(DEFAULT_INDICATORS);
+  const [chartType, setChartType] = useState<'candle' | 'line'>('candle');
+  const [showIndicatorPanel, setShowIndicatorPanel] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [newIndType, setNewIndType] = useState<'SMA' | 'EMA' | 'WMA'>('EMA');
+  const [newIndPeriod, setNewIndPeriod] = useState('50');
 
-  // Drag state via refs (don't need re-render)
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef({ x: 0, viewStart: 0 });
-  const pinchStartRef = useRef({ dist: 0, viewCount: 0 });
-  // Keep latest viewStart/viewCount in refs for event handlers
-  const viewRef = useRef({ start: 0, count: 0, total: 0 });
-
-  const curr = getCurrencySymbol(ticker);
-
-  useEffect(() => {
-    setShowMAControls(window.innerWidth >= 640);
-  }, []);
+  // View state
+  const [vStart, setVStart] = useState(0);
+  const [vCount, setVCount] = useState(0);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Load data
   useEffect(() => {
     setLoading(true);
-    fetchHistoricalData(ticker, range).then(data => {
-      setHistoryData(data);
-      const extRange = EXTENDED_RANGES[range];
-      if (extRange) {
-        fetchHistoricalData(ticker, extRange).then(ext => {
-          setExtendedData(ext);
-          setLoading(false);
-        }).catch(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
+    const ext = EXTENDED_RANGES[range] || range;
+    // Always fetch the extended range for more history
+    Promise.all([
+      fetchHistoricalData(ticker, range),
+      fetchHistoricalData(ticker, ext),
+    ]).then(([primary, extended]) => {
+      const merged = extended.length > primary.length ? extended : primary;
+      setAllData(merged);
+      setDefaultDataLen(primary.length || merged.length);
+      const count = primary.length || merged.length;
+      setVCount(count);
+      setVStart(Math.max(0, merged.length - count));
+      setLoading(false);
     }).catch(() => setLoading(false));
   }, [ticker, range]);
 
-  // Merge data
-  useEffect(() => {
-    const merged = extendedData.length > historyData.length ? extendedData : historyData;
-    setAllData(merged);
-    const defaultCount = Math.min(historyData.length || merged.length, merged.length);
-    const count = defaultCount > 0 ? defaultCount : merged.length;
-    const start = Math.max(0, merged.length - count);
-    setViewCount(count);
-    setViewStart(start);
-    viewRef.current = { start, count, total: merged.length };
-  }, [historyData, extendedData]);
-
-  // Keep ref in sync
-  useEffect(() => {
-    viewRef.current = { start: viewStart, count: viewCount, total: allData.length };
-  }, [viewStart, viewCount, allData.length]);
-
-  const clampAndSet = (start: number, count: number) => {
-    const total = viewRef.current.total;
-    const c = Math.max(10, Math.min(count, total));
-    const s = Math.max(0, Math.min(start, total - c));
-    setViewStart(s);
-    setViewCount(c);
-  };
-
-  const handleZoom = (factor: number) => {
-    const { start, count } = viewRef.current;
-    const newCount = Math.round(count * factor);
-    const center = start + count / 2;
-    const newStart = Math.round(center - newCount / 2);
-    clampAndSet(newStart, newCount);
-  };
-
-  const handleReset = () => {
-    const total = viewRef.current.total;
-    const defaultCount = historyData.length || total;
-    clampAndSet(Math.max(0, total - defaultCount), defaultCount);
-  };
-
-  // Pointer events for drag — use native events to avoid stale closures
+  // --- Interaction via native events on canvas ---
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || allData.length < 2) return;
 
-    const onPointerDown = (e: PointerEvent) => {
-      isDraggingRef.current = true;
-      dragStartRef.current = { x: e.clientX, viewStart: viewRef.current.start };
+    let dragging = false;
+    let startX = 0;
+    let startVS = 0;
+
+    const getView = () => ({ s: vStart, c: vCount, total: allData.length });
+
+    const clamp = (s: number, c: number) => {
+      const total = allData.length;
+      const cc = Math.max(10, Math.min(c, total));
+      const ss = Math.max(0, Math.min(s, total - cc));
+      return { s: ss, c: cc };
+    };
+
+    const applyView = (s: number, c: number) => {
+      const v = clamp(s, c);
+      setVStart(v.s);
+      setVCount(v.c);
+    };
+
+    const onDown = (e: PointerEvent) => {
+      dragging = true;
+      startX = e.clientX;
+      startVS = vStart; // capture current
       canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
     };
 
-    const onPointerMove = (e: PointerEvent) => {
-      if (!isDraggingRef.current) return;
-      const dx = e.clientX - dragStartRef.current.x;
-      const pxPerBar = canvas.getBoundingClientRect().width / viewRef.current.count;
-      const barShift = Math.round(-dx / pxPerBar);
-      const newStart = dragStartRef.current.viewStart + barShift;
-      clampAndSet(newStart, viewRef.current.count);
+    const onMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const w = canvas.getBoundingClientRect().width;
+      const barsPerPx = vCount / w;
+      const shift = Math.round(-dx * barsPerPx);
+      applyView(startVS + shift, vCount);
     };
 
-    const onPointerUp = () => {
-      isDraggingRef.current = false;
-    };
+    const onUp = () => { dragging = false; };
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      const centerRatio = (e.clientX - rect.left) / rect.width;
-      const factor = e.deltaY > 0 ? 1.15 : 0.87;
-      const { start, count } = viewRef.current;
-      const newCount = Math.round(count * factor);
-      const centerIdx = start + count * centerRatio;
-      const newStart = Math.round(centerIdx - newCount * centerRatio);
-      clampAndSet(newStart, newCount);
+      const ratio = (e.clientX - rect.left) / rect.width;
+      const factor = e.deltaY > 0 ? 1.2 : 0.83;
+      const newC = Math.round(vCount * factor);
+      const center = vStart + vCount * ratio;
+      const newS = Math.round(center - newC * ratio);
+      applyView(newS, newC);
     };
 
+    // Pinch
     let pinchDist = 0;
-    let pinchCount = 0;
-
+    let pinchC = 0;
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         pinchDist = Math.sqrt(dx * dx + dy * dy);
-        pinchCount = viewRef.current.count;
+        pinchC = vCount;
       }
     };
-
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 2 && pinchDist > 0) {
         e.preventDefault();
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const scale = pinchDist / dist;
-        const newCount = Math.round(pinchCount * scale);
-        const { start, count } = viewRef.current;
-        clampAndSet(start + Math.round((count - newCount) / 2), newCount);
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const newC = Math.round(pinchC * (pinchDist / d));
+        applyView(vStart + Math.round((vCount - newC) / 2), newC);
       }
     };
 
-    canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointermove', onPointerMove);
-    canvas.addEventListener('pointerup', onPointerUp);
-    canvas.addEventListener('pointercancel', onPointerUp);
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('touchstart', onTouchStart, { passive: true });
     canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-
     return () => {
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
-      canvas.removeEventListener('pointerup', onPointerUp);
-      canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('touchstart', onTouchStart);
       canvas.removeEventListener('touchmove', onTouchMove);
     };
-  }, [allData]); // re-attach when data changes
+  }, [allData, vStart, vCount]);
 
-  const toggleMA = (period: number) => {
-    setActiveMAs(prev => {
-      const next = new Set(prev);
-      if (next.has(period)) next.delete(period);
-      else next.add(period);
-      return next;
-    });
+  // Zoom buttons
+  const zoomIn = () => {
+    const newC = Math.round(vCount * 0.7);
+    const center = vStart + vCount / 2;
+    setVCount(Math.max(10, newC));
+    setVStart(Math.max(0, Math.min(Math.round(center - newC / 2), allData.length - newC)));
+  };
+  const zoomOut = () => {
+    const newC = Math.round(vCount * 1.4);
+    const c = Math.min(newC, allData.length);
+    const center = vStart + vCount / 2;
+    setVCount(c);
+    setVStart(Math.max(0, Math.min(Math.round(center - c / 2), allData.length - c)));
+  };
+  const resetView = () => {
+    const c = defaultDataLen || allData.length;
+    setVCount(c);
+    setVStart(Math.max(0, allData.length - c));
   };
 
-  // === DRAW CHART ===
+  // Add indicator
+  const addIndicator = () => {
+    const p = parseInt(newIndPeriod);
+    if (isNaN(p) || p < 1 || p > 500) return;
+    const color = INDICATOR_COLORS[indicators.length % INDICATOR_COLORS.length];
+    setIndicators([...indicators, { id: Date.now().toString(), type: newIndType, period: p, color }]);
+  };
+
+  const removeIndicator = (id: string) => {
+    setIndicators(indicators.filter(i => i.id !== id));
+  };
+
+  // === DRAW ===
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || allData.length < 2 || viewCount < 2) return;
-
+    if (!canvas || allData.length < 2 || vCount < 2) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -249,189 +274,136 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
-
     const w = rect.width;
     const h = rect.height;
 
-    const visibleData = allData.slice(viewStart, viewStart + viewCount);
-    const n = visibleData.length;
+    const vis = allData.slice(vStart, vStart + vCount);
+    const n = vis.length;
     if (n < 2) return;
 
-    const closePrices = visibleData.map(d => d.close);
-    const allClosePrices = allData.map(d => d.close);
-
-    const allLows = visibleData.map(d => d.low || d.close).filter(v => v > 0);
-    const allHighs = visibleData.map(d => d.high || d.close).filter(v => v > 0);
-    const minP = Math.min(...allLows, ...closePrices);
-    const maxP = Math.max(...allHighs, ...closePrices);
-    const targetPrice = stock?.targetPrice;
-    const rangeP = maxP - minP || 1;
-
-    const chartTop = 8;
-    const chartBottom = h * 0.85;
-    const chartH = chartBottom - chartTop;
-    const priceToY = (p: number) => chartBottom - ((p - minP) / rangeP) * chartH;
+    const closes = vis.map(d => d.close);
+    const allCloses = allData.map(d => d.close);
+    const lows = vis.map(d => d.low || d.close).filter(v => v > 0);
+    const highs = vis.map(d => d.high || d.close).filter(v => v > 0);
+    const minP = Math.min(...lows, ...closes);
+    const maxP = Math.max(...highs, ...closes);
+    const rng = maxP - minP || 1;
+    const cTop = 8, cBot = h * 0.84, cH = cBot - cTop;
+    const p2y = (p: number) => cBot - ((p - minP) / rng) * cH;
 
     ctx.clearRect(0, 0, w, h);
 
     // Grid
-    ctx.strokeStyle = '#2a2f3e';
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = '#2a2f3e'; ctx.lineWidth = 0.5;
     for (let i = 0; i <= 4; i++) {
-      const y = chartTop + (i / 4) * chartH;
+      const y = cTop + (i / 4) * cH;
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '10px Inter, sans-serif';
-      ctx.fillText(formatPrice(maxP - (i / 4) * rangeP, curr), 4, y - 3);
+      ctx.fillStyle = '#94a3b8'; ctx.font = '10px Inter,sans-serif';
+      ctx.fillText(fmtPrice(maxP - (i / 4) * rng, curr), 4, y - 3);
     }
 
     // Date labels
-    ctx.fillStyle = '#64748b';
-    ctx.font = '9px Inter, sans-serif';
-    const labelInterval = Math.max(1, Math.floor(n / 6));
-    for (let i = 0; i < n; i += labelInterval) {
+    ctx.fillStyle = '#64748b'; ctx.font = '9px Inter,sans-serif';
+    const lbl = Math.max(1, Math.floor(n / 6));
+    for (let i = 0; i < n; i += lbl) {
       const x = ((i + 0.5) / n) * w;
-      const dateStr = visibleData[i].time.length > 10 ? visibleData[i].time.slice(11, 16) : visibleData[i].time.slice(5);
-      ctx.fillText(dateStr, x - 15, chartBottom + 12);
+      const ds = vis[i].time.length > 10 ? vis[i].time.slice(5, 10) : vis[i].time.slice(5);
+      ctx.fillText(ds, x - 15, cBot + 12);
     }
 
-    const candleSpacing = w / n;
-    const candleW = Math.max(1, Math.min(candleSpacing * 0.6, 20));
+    const sp = w / n;
+    const cw = Math.max(1, Math.min(sp * 0.6, 20));
 
-    // MA lines
-    for (const period of MA_PERIODS) {
-      if (!activeMAs.has(period)) continue;
-      const maData = calculateMA(allClosePrices, period);
-      ctx.beginPath();
-      ctx.strokeStyle = MA_COLORS[period];
-      ctx.lineWidth = 1.2;
-      ctx.globalAlpha = 0.8;
+    // Indicators
+    for (const ind of indicators) {
+      const maData = calcIndicator(allCloses, ind);
+      ctx.beginPath(); ctx.strokeStyle = ind.color; ctx.lineWidth = 1.3; ctx.globalAlpha = 0.85;
       let started = false;
       for (let i = 0; i < n; i++) {
-        const val = maData[viewStart + i];
-        if (val === null || val === undefined) continue;
-        if (val < minP * 0.95 || val > maxP * 1.05) continue;
+        const v = maData[vStart + i];
+        if (v === null || v === undefined) continue;
+        if (v < minP * 0.9 || v > maxP * 1.1) continue;
         const x = ((i + 0.5) / n) * w;
-        const y = priceToY(val);
-        if (!started) { ctx.moveTo(x, y); started = true; }
-        else ctx.lineTo(x, y);
+        const y = p2y(v);
+        if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
       }
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.stroke(); ctx.globalAlpha = 1;
     }
 
+    // Candles or line
     if (chartType === 'candle') {
-      visibleData.forEach((d, i) => {
+      vis.forEach((d, i) => {
         const x = ((i + 0.5) / n) * w;
-        const open = d.open || d.close;
-        const close = d.close;
-        const high = d.high || Math.max(open, close);
-        const low = d.low || Math.min(open, close);
-        const bullish = close >= open;
-
-        const bodyTop = priceToY(Math.max(open, close));
-        const bodyBot = priceToY(Math.min(open, close));
-        const bodyH = Math.max(1, bodyBot - bodyTop);
-
-        ctx.strokeStyle = bullish ? '#4ade80' : '#f87171';
-        ctx.fillStyle = bullish ? '#4ade80' : '#f87171';
+        const o = d.open || d.close, c = d.close;
+        const hi = d.high || Math.max(o, c), lo = d.low || Math.min(o, c);
+        const bull = c >= o;
+        const bT = p2y(Math.max(o, c)), bB = p2y(Math.min(o, c));
+        const bH = Math.max(1, bB - bT);
+        ctx.strokeStyle = ctx.fillStyle = bull ? '#4ade80' : '#f87171';
         ctx.lineWidth = 1;
-
-        ctx.beginPath();
-        ctx.moveTo(x, priceToY(high));
-        ctx.lineTo(x, priceToY(low));
-        ctx.stroke();
-
-        if (bodyH <= 1) {
-          ctx.beginPath();
-          ctx.moveTo(x - candleW / 2, bodyTop);
-          ctx.lineTo(x + candleW / 2, bodyTop);
-          ctx.stroke();
-        } else {
-          ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
-        }
+        ctx.beginPath(); ctx.moveTo(x, p2y(hi)); ctx.lineTo(x, p2y(lo)); ctx.stroke();
+        if (bH <= 1) { ctx.beginPath(); ctx.moveTo(x - cw / 2, bT); ctx.lineTo(x + cw / 2, bT); ctx.stroke(); }
+        else ctx.fillRect(x - cw / 2, bT, cw, bH);
       });
     } else {
-      const isUpLine = closePrices[closePrices.length - 1] >= closePrices[0];
-      ctx.beginPath();
-      ctx.strokeStyle = isUpLine ? '#4ade80' : '#f87171';
-      ctx.lineWidth = 2;
-      closePrices.forEach((p, i) => {
-        const x = ((i + 0.5) / n) * w;
-        const y = priceToY(p);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
+      const up = closes[closes.length - 1] >= closes[0];
+      ctx.beginPath(); ctx.strokeStyle = up ? '#4ade80' : '#f87171'; ctx.lineWidth = 2;
+      closes.forEach((p, i) => { const x = ((i + 0.5) / n) * w; if (i === 0) ctx.moveTo(x, p2y(p)); else ctx.lineTo(x, p2y(p)); });
       ctx.stroke();
-      const gradient = ctx.createLinearGradient(0, 0, 0, chartBottom);
-      gradient.addColorStop(0, isUpLine ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)');
-      gradient.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.lineTo(((n - 0.5) / n) * w, chartBottom);
-      ctx.lineTo((0.5 / n) * w, chartBottom);
-      ctx.closePath();
-      ctx.fillStyle = gradient;
-      ctx.fill();
+      const g = ctx.createLinearGradient(0, 0, 0, cBot);
+      g.addColorStop(0, up ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.lineTo(((n - 0.5) / n) * w, cBot); ctx.lineTo((0.5 / n) * w, cBot);
+      ctx.closePath(); ctx.fillStyle = g; ctx.fill();
     }
 
-    // Target line
-    if (targetPrice) {
-      const inRange = targetPrice >= minP && targetPrice <= maxP;
-      const targetY = inRange ? priceToY(targetPrice) : targetPrice > maxP ? chartTop + 4 : chartBottom - 4;
-      ctx.beginPath();
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 4]);
-      ctx.moveTo(0, targetY);
-      ctx.lineTo(w, targetY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      const arrow = targetPrice > maxP ? ' ↑' : targetPrice < minP ? ' ↓' : '';
-      const label = `Target: ${formatPrice(targetPrice, curr)}${arrow}`;
-      ctx.font = 'bold 11px Inter, sans-serif';
-      const tw = ctx.measureText(label).width;
-      const lx = w - tw - 10;
-      const ly = targetPrice > maxP ? targetY + 14 : targetY - 5;
-      ctx.fillStyle = 'rgba(239,68,68,0.15)';
-      ctx.fillRect(lx - 4, ly - 12, tw + 8, 16);
-      ctx.fillStyle = '#ef4444';
-      ctx.fillText(label, lx, ly);
+    // Target
+    const tp = stock?.targetPrice;
+    if (tp) {
+      const inR = tp >= minP && tp <= maxP;
+      const ty = inR ? p2y(tp) : tp > maxP ? cTop + 4 : cBot - 4;
+      ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+      ctx.moveTo(0, ty); ctx.lineTo(w, ty); ctx.stroke(); ctx.setLineDash([]);
+      const arr = tp > maxP ? ' ↑' : tp < minP ? ' ↓' : '';
+      const lb = `Target: ${fmtPrice(tp, curr)}${arr}`;
+      ctx.font = 'bold 11px Inter,sans-serif';
+      const tw2 = ctx.measureText(lb).width;
+      const lx = w - tw2 - 10, ly = tp > maxP ? ty + 14 : ty - 5;
+      ctx.fillStyle = 'rgba(239,68,68,0.15)'; ctx.fillRect(lx - 4, ly - 12, tw2 + 8, 16);
+      ctx.fillStyle = '#ef4444'; ctx.fillText(lb, lx, ly);
     }
 
     // Volume
-    const volTop = chartBottom + 18;
-    const volH = h - volTop - 2;
-    const maxVol = Math.max(...visibleData.map(d => d.volume));
-    if (maxVol > 0 && volH > 5) {
-      visibleData.forEach((d, i) => {
+    const vTop = cBot + 18, vH = h - vTop - 2;
+    const maxV = Math.max(...vis.map(d => d.volume));
+    if (maxV > 0 && vH > 5) {
+      vis.forEach((d, i) => {
         const x = ((i + 0.5) / n) * w;
-        const barH = (d.volume / maxVol) * volH;
+        const bh = (d.volume / maxV) * vH;
         ctx.fillStyle = d.close >= (d.open || d.close) ? 'rgba(74,222,128,0.3)' : 'rgba(248,113,113,0.3)';
-        ctx.fillRect(x - candleW / 2, h - 2 - barH, candleW, barH);
+        ctx.fillRect(x - cw / 2, h - 2 - bh, cw, bh);
       });
     }
 
-    // Scroll indicator
-    if (allData.length > viewCount) {
-      const barY = h - 1;
-      const totalW = w * 0.3;
-      const barX = w * 0.35;
-      const thumbW = totalW * (viewCount / allData.length);
-      const thumbX = barX + (totalW - thumbW) * (viewStart / Math.max(1, allData.length - viewCount));
-      ctx.fillStyle = '#2a2f3e';
-      ctx.fillRect(barX, barY, totalW, 2);
-      ctx.fillStyle = '#60a5fa';
-      ctx.fillRect(thumbX, barY, Math.max(thumbW, 4), 2);
+    // Scroll bar
+    if (allData.length > vCount) {
+      const bw = w * 0.3, bx = w * 0.35;
+      const tw3 = bw * (vCount / allData.length);
+      const tx = bx + (bw - tw3) * (vStart / Math.max(1, allData.length - vCount));
+      ctx.fillStyle = '#2a2f3e'; ctx.fillRect(bx, h - 1, bw, 2);
+      ctx.fillStyle = '#60a5fa'; ctx.fillRect(tx, h - 1, Math.max(tw3, 4), 2);
     }
-  }, [allData, viewStart, viewCount, stock?.targetPrice, activeMAs, chartType, curr]);
+  }, [allData, vStart, vCount, stock?.targetPrice, indicators, chartType, curr]);
 
   const handleSetTarget = () => {
-    const value = parseFloat(targetInput);
-    if (!isNaN(value) && value > 0) setTargetPrice(ticker, value);
+    const v = parseFloat(targetInput);
+    if (!isNaN(v) && v > 0) setTargetPrice(ticker, v);
   };
 
   if (!stock) return null;
   const price = priceData?.price ?? 0;
   const change = priceData?.change ?? 0;
-  const changePercent = priceData?.changePercent ?? 0;
+  const changePct = priceData?.changePercent ?? 0;
   const isUp = change >= 0;
 
   return (
@@ -445,46 +417,94 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <div className="text-2xl font-bold text-sa-text">{formatPrice(price, curr)}</div>
+              <div className="text-2xl font-bold text-sa-text">{fmtPrice(price, curr)}</div>
               <div className={`text-sm font-medium ${isUp ? 'text-sa-up' : 'text-sa-down'}`}>
-                {isUp ? '+' : ''}{change.toFixed(2)} ({isUp ? '+' : ''}{changePercent.toFixed(2)}%)
+                {isUp ? '+' : ''}{change.toFixed(2)} ({isUp ? '+' : ''}{changePct.toFixed(2)}%)
               </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-sa-bg rounded-lg">
-              <X className="w-5 h-5 text-sa-text-secondary" />
-            </button>
+            <button onClick={onClose} className="p-2 hover:bg-sa-bg rounded-lg"><X className="w-5 h-5 text-sa-text-secondary" /></button>
           </div>
         </div>
 
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <div className="flex bg-sa-bg rounded-lg p-0.5">
-            <button onClick={() => setChartType('candle')} className={`p-1.5 rounded transition-colors ${chartType === 'candle' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`}><BarChart3 className="w-4 h-4" /></button>
-            <button onClick={() => setChartType('line')} className={`p-1.5 rounded transition-colors ${chartType === 'line' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`}><TrendingUp className="w-4 h-4" /></button>
+            <button onClick={() => setChartType('candle')} className={`p-1.5 rounded ${chartType === 'candle' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`}><BarChart3 className="w-4 h-4" /></button>
+            <button onClick={() => setChartType('line')} className={`p-1.5 rounded ${chartType === 'line' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`}><TrendingUp className="w-4 h-4" /></button>
           </div>
           <div className="w-px h-5 bg-sa-border" />
           <div className="flex gap-1">
             {['1D', '1W', '1M', '3M', '1Y'].map(r => (
-              <button key={r} onClick={() => setRange(r)} className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${range === r ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`}>{tTime(r)}</button>
+              <button key={r} onClick={() => setRange(r)} className={`px-2.5 py-1 rounded text-xs font-medium ${range === r ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`}>{tTime(r)}</button>
             ))}
           </div>
           <div className="w-px h-5 bg-sa-border" />
-          <div className="flex items-center gap-1">
-            <button onClick={() => setShowMAControls(v => !v)} className={`flex items-center gap-0.5 px-2 py-1 rounded text-xs font-medium transition-colors ${showMAControls ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`}>
-              MA <ChevronDown className={`w-3 h-3 transition-transform ${showMAControls ? 'rotate-180' : ''}`} />
-            </button>
-            {showMAControls && MA_PERIODS.map(period => (
-              <button key={period} onClick={() => toggleMA(period)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${activeMAs.has(period) ? 'text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`} style={activeMAs.has(period) ? { backgroundColor: MA_COLORS[period] } : undefined}>MA{period}</button>
-            ))}
-          </div>
+          {/* Indicator toggle */}
+          <button onClick={() => setShowIndicatorPanel(v => !v)} className={`flex items-center gap-0.5 px-2 py-1 rounded text-xs font-medium ${showIndicatorPanel ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`}>
+            Indicators <ChevronDown className={`w-3 h-3 transition-transform ${showIndicatorPanel ? 'rotate-180' : ''}`} />
+          </button>
         </div>
 
-        {activeMAs.size > 0 && (
+        {/* Indicator Panel — TradingView style */}
+        {showIndicatorPanel && (
+          <div className="sa-card p-3 mb-3 border border-sa-border">
+            <div className="text-xs font-medium text-sa-text mb-2">Active Indicators</div>
+            <div className="space-y-1 mb-3">
+              {indicators.map(ind => (
+                <div key={ind.id} className="flex items-center gap-2 text-xs">
+                  <span className="w-3 h-[3px] rounded" style={{ backgroundColor: ind.color }} />
+                  <span className="text-sa-text font-medium">{ind.type}</span>
+                  <span className="text-sa-text-secondary">({ind.period})</span>
+                  <button onClick={() => removeIndicator(ind.id)} className="ml-auto p-0.5 text-sa-text-secondary hover:text-sa-alert"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              ))}
+              {indicators.length === 0 && <p className="text-xs text-sa-text-secondary">No indicators added</p>}
+            </div>
+            <div className="flex items-center gap-2">
+              <select value={newIndType} onChange={e => setNewIndType(e.target.value as any)} className="bg-sa-bg border border-sa-border rounded px-2 py-1 text-xs text-sa-text outline-none">
+                <option value="SMA">SMA</option>
+                <option value="EMA">EMA</option>
+                <option value="WMA">WMA</option>
+              </select>
+              <input type="number" value={newIndPeriod} onChange={e => setNewIndPeriod(e.target.value)} className="w-16 bg-sa-bg border border-sa-border rounded px-2 py-1 text-xs text-sa-text outline-none" placeholder="Period" />
+              <button onClick={addIndicator} className="flex items-center gap-1 px-2 py-1 rounded bg-sa-accent text-white text-xs font-medium hover:bg-blue-500">
+                <Plus className="w-3 h-3" /> Add
+              </button>
+            </div>
+            {/* Quick presets */}
+            <div className="flex flex-wrap gap-1 mt-2">
+              {[
+                { label: 'EMA 9', type: 'EMA' as const, period: 9 },
+                { label: 'SMA 20', type: 'SMA' as const, period: 20 },
+                { label: 'EMA 50', type: 'EMA' as const, period: 50 },
+                { label: 'SMA 100', type: 'SMA' as const, period: 100 },
+                { label: 'SMA 200', type: 'SMA' as const, period: 200 },
+                { label: 'EMA 12', type: 'EMA' as const, period: 12 },
+                { label: 'EMA 26', type: 'EMA' as const, period: 26 },
+              ].map(p => {
+                const exists = indicators.some(i => i.type === p.type && i.period === p.period);
+                return (
+                  <button key={p.label} onClick={() => {
+                    if (!exists) {
+                      const color = INDICATOR_COLORS[indicators.length % INDICATOR_COLORS.length];
+                      setIndicators(prev => [...prev, { id: Date.now().toString(), type: p.type, period: p.period, color }]);
+                    }
+                  }} disabled={exists} className={`px-2 py-0.5 rounded text-[10px] font-medium ${exists ? 'bg-sa-border/50 text-sa-text-secondary/50' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text hover:bg-sa-border'}`}>
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Active indicator legend */}
+        {indicators.length > 0 && (
           <div className="flex flex-wrap gap-3 mb-2 text-[10px]">
-            {MA_PERIODS.filter(p => activeMAs.has(p)).map(period => (
-              <span key={period} className="flex items-center gap-1">
-                <span className="w-3 h-[2px] rounded" style={{ backgroundColor: MA_COLORS[period] }} />
-                <span className="text-sa-text-secondary">MA{period}</span>
+            {indicators.map(ind => (
+              <span key={ind.id} className="flex items-center gap-1">
+                <span className="w-3 h-[2px] rounded" style={{ backgroundColor: ind.color }} />
+                <span className="text-sa-text-secondary">{ind.type}{ind.period}</span>
               </span>
             ))}
           </div>
@@ -498,19 +518,19 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
             </div>
           )}
           <div className="absolute top-2 right-2 z-10 flex gap-1 bg-black/40 backdrop-blur-sm rounded-lg p-1">
-            <button onClick={() => handleZoom(0.7)} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Zoom In"><ZoomIn className="w-3.5 h-3.5" /></button>
-            <button onClick={() => handleZoom(1.4)} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Zoom Out"><ZoomOut className="w-3.5 h-3.5" /></button>
-            <button onClick={handleReset} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Reset"><RotateCcw className="w-3.5 h-3.5" /></button>
+            <button onClick={zoomIn} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10"><ZoomIn className="w-3.5 h-3.5" /></button>
+            <button onClick={zoomOut} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10"><ZoomOut className="w-3.5 h-3.5" /></button>
+            <button onClick={resetView} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10"><RotateCcw className="w-3.5 h-3.5" /></button>
           </div>
-          <canvas ref={canvasRef} className="w-full h-64 sm:h-80 cursor-grab active:cursor-grabbing touch-none" />
+          <canvas ref={canvasRef} className="w-full h-64 sm:h-80 cursor-grab active:cursor-grabbing touch-none select-none" />
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
           {[
-            { label: t('high'), value: priceData?.high ? formatPrice(priceData.high, curr) : '\u2014' },
-            { label: t('low'), value: priceData?.low ? formatPrice(priceData.low, curr) : '\u2014' },
-            { label: t('volume'), value: priceData?.volume?.toLocaleString() || '\u2014' },
+            { label: t('high'), value: priceData?.high ? fmtPrice(priceData.high, curr) : '—' },
+            { label: t('low'), value: priceData?.low ? fmtPrice(priceData.low, curr) : '—' },
+            { label: t('volume'), value: priceData?.volume?.toLocaleString() || '—' },
             { label: t('marketClosed'), value: priceData?.marketOpen ? 'Open' : 'Closed' },
           ].map(stat => (
             <div key={stat.label} className="bg-sa-bg rounded-lg px-3 py-2">
@@ -529,7 +549,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
         {stock.targetPrice && (
           <div className="mt-2 text-xs text-sa-alert flex items-center gap-1">
             <span className="w-4 h-0 inline-block" style={{ borderTop: '1.5px dashed #ef4444' }} />
-            {t('targetPrice')}: {formatPrice(stock.targetPrice, curr)}
+            {t('targetPrice')}: {fmtPrice(stock.targetPrice, curr)}
             {priceData && <span className="text-sa-text-secondary ml-1">({((stock.targetPrice - priceData.price) / priceData.price * 100).toFixed(1)}%)</span>}
           </div>
         )}
