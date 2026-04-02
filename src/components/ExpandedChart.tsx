@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import { X } from 'lucide-react';
+import { X, BarChart3, TrendingUp } from 'lucide-react';
 import { useWatchlistStore } from '@/store/useWatchlistStore';
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/stockApi';
 
@@ -13,11 +13,11 @@ interface ExpandedChartProps {
 
 const MA_PERIODS = [5, 10, 20, 100, 200];
 const MA_COLORS: Record<number, string> = {
-  5: '#f59e0b',   // amber
-  10: '#8b5cf6',  // purple
-  20: '#06b6d4',  // cyan
-  100: '#f97316', // orange
-  200: '#ec4899', // pink
+  5: '#f59e0b',
+  10: '#8b5cf6',
+  20: '#06b6d4',
+  100: '#f97316',
+  200: '#ec4899',
 };
 
 function calculateMA(data: number[], period: number): (number | null)[] {
@@ -27,9 +27,7 @@ function calculateMA(data: number[], period: number): (number | null)[] {
       result.push(null);
     } else {
       let sum = 0;
-      for (let j = i - period + 1; j <= i; j++) {
-        sum += data[j];
-      }
+      for (let j = i - period + 1; j <= i; j++) sum += data[j];
       result.push(sum / period);
     }
   }
@@ -46,6 +44,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
   const [targetInput, setTargetInput] = useState(stock?.targetPrice?.toString() || '');
   const [activeMAs, setActiveMAs] = useState<Set<number>>(new Set([5, 20]));
+  const [chartType, setChartType] = useState<'candle' | 'line'>('candle');
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -76,24 +75,34 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
 
     const w = rect.width;
     const h = rect.height;
+    const n = historyData.length;
     const closePrices = historyData.map(d => d.close);
 
     if (closePrices.length < 2) return;
-    const minP = Math.min(...closePrices);
-    const maxP = Math.max(...closePrices);
+
+    // Price range from OHLC (not just close)
+    let allLows = historyData.map(d => d.low).filter(v => v > 0);
+    let allHighs = historyData.map(d => d.high).filter(v => v > 0);
+    if (allLows.length === 0) allLows = closePrices;
+    if (allHighs.length === 0) allHighs = closePrices;
+    const minP = Math.min(...allLows);
+    const maxP = Math.max(...allHighs);
     const targetPrice = stock?.targetPrice;
     const rangeP = maxP - minP || 1;
-    const padding = 8;
 
-    const priceToY = (p: number) => h - padding - ((p - minP) / rangeP) * (h - padding * 2);
+    const chartTop = 8;
+    const chartBottom = h * 0.85; // leave bottom 15% for volume
+    const chartH = chartBottom - chartTop;
+
+    const priceToY = (p: number) => chartBottom - ((p - minP) / rangeP) * chartH;
 
     ctx.clearRect(0, 0, w, h);
 
-    // Grid lines
+    // Grid lines + price labels
     ctx.strokeStyle = '#2a2f3e';
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= 4; i++) {
-      const y = padding + (i / 4) * (h - padding * 2);
+      const y = chartTop + (i / 4) * chartH;
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
@@ -105,7 +114,11 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.fillText('$' + priceLabel, 4, y - 3);
     }
 
-    // Moving Averages (draw before price line so price is on top)
+    // Candle / bar width
+    const candleSpacing = w / n;
+    const candleW = Math.max(1, candleSpacing * 0.6);
+
+    // Moving Averages
     for (const period of MA_PERIODS) {
       if (!activeMAs.has(period)) continue;
       const maData = calculateMA(closePrices, period);
@@ -116,7 +129,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       let started = false;
       maData.forEach((val, i) => {
         if (val === null) return;
-        const x = (i / (closePrices.length - 1)) * w;
+        const x = (i + 0.5) * candleSpacing;
         const y = priceToY(val);
         if (!started) { ctx.moveTo(x, y); started = true; }
         else ctx.lineTo(x, y);
@@ -125,40 +138,87 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.globalAlpha = 1;
     }
 
-    // Price line
-    const isUp = closePrices[closePrices.length - 1] >= closePrices[0];
-    ctx.beginPath();
-    ctx.strokeStyle = isUp ? '#4ade80' : '#f87171';
-    ctx.lineWidth = 2;
+    if (chartType === 'candle') {
+      // === CANDLESTICK CHART ===
+      historyData.forEach((d, i) => {
+        const x = (i + 0.5) * candleSpacing;
+        const open = d.open || d.close;
+        const close = d.close;
+        const high = d.high || Math.max(open, close);
+        const low = d.low || Math.min(open, close);
+        const bullish = close >= open;
 
-    closePrices.forEach((p, i) => {
-      const x = (i / (closePrices.length - 1)) * w;
-      const y = priceToY(p);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+        const bodyTop = priceToY(Math.max(open, close));
+        const bodyBot = priceToY(Math.min(open, close));
+        const bodyH = Math.max(1, bodyBot - bodyTop);
 
-    // Gradient fill
-    const gradient = ctx.createLinearGradient(0, 0, 0, h);
-    gradient.addColorStop(0, isUp ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)');
-    gradient.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    ctx.closePath();
-    ctx.fillStyle = gradient;
-    ctx.fill();
+        // Wick (high-low line)
+        ctx.beginPath();
+        ctx.strokeStyle = bullish ? '#4ade80' : '#f87171';
+        ctx.lineWidth = 1;
+        ctx.moveTo(x, priceToY(high));
+        ctx.lineTo(x, priceToY(low));
+        ctx.stroke();
 
-    // Target line (always visible — range extended above)
+        // Body
+        if (bullish) {
+          ctx.fillStyle = '#4ade80';
+          ctx.strokeStyle = '#4ade80';
+        } else {
+          ctx.fillStyle = '#f87171';
+          ctx.strokeStyle = '#f87171';
+        }
+
+        if (bodyH <= 1) {
+          // Doji - just a line
+          ctx.beginPath();
+          ctx.moveTo(x - candleW / 2, bodyTop);
+          ctx.lineTo(x + candleW / 2, bodyTop);
+          ctx.stroke();
+        } else if (bullish) {
+          // Hollow bullish candle (or filled green)
+          ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
+        } else {
+          // Filled red bearish candle
+          ctx.fillRect(x - candleW / 2, bodyTop, candleW, bodyH);
+        }
+      });
+    } else {
+      // === LINE CHART ===
+      const isUp = closePrices[closePrices.length - 1] >= closePrices[0];
+      ctx.beginPath();
+      ctx.strokeStyle = isUp ? '#4ade80' : '#f87171';
+      ctx.lineWidth = 2;
+
+      closePrices.forEach((p, i) => {
+        const x = (i + 0.5) * candleSpacing;
+        const y = priceToY(p);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Gradient fill
+      const gradient = ctx.createLinearGradient(0, 0, 0, chartBottom);
+      gradient.addColorStop(0, isUp ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.lineTo((n - 0.5) * candleSpacing, chartBottom);
+      ctx.lineTo(0.5 * candleSpacing, chartBottom);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+
+    // Target line
     if (targetPrice) {
       const inRange = targetPrice >= minP && targetPrice <= maxP;
       let targetY: number;
       if (inRange) {
         targetY = priceToY(targetPrice);
       } else if (targetPrice > maxP) {
-        targetY = padding + 4; // pin to top
+        targetY = chartTop + 4;
       } else {
-        targetY = h - padding - 4; // pin to bottom
+        targetY = chartBottom - 4;
       }
 
       ctx.beginPath();
@@ -170,7 +230,6 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Target label with background
       const arrow = targetPrice > maxP ? ' ↑' : targetPrice < minP ? ' ↓' : '';
       const label = `Target: $${targetPrice.toFixed(2)}${arrow}`;
       ctx.font = 'bold 11px Inter, sans-serif';
@@ -184,17 +243,19 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     }
 
     // Volume bars at bottom
+    const volTop = chartBottom + 4;
+    const volH = h - volTop - 2;
     const maxVol = Math.max(...historyData.map(d => d.volume));
-    if (maxVol > 0) {
-      const barW = Math.max(1, w / historyData.length - 1);
+    if (maxVol > 0 && volH > 5) {
       historyData.forEach((d, i) => {
-        const x = (i / (historyData.length - 1)) * w;
-        const barH = (d.volume / maxVol) * h * 0.12;
-        ctx.fillStyle = d.close >= d.open ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)';
-        ctx.fillRect(x - barW / 2, h - barH, barW, barH);
+        const x = (i + 0.5) * candleSpacing;
+        const barH = (d.volume / maxVol) * volH;
+        const bullish = d.close >= d.open;
+        ctx.fillStyle = bullish ? 'rgba(74,222,128,0.3)' : 'rgba(248,113,113,0.3)';
+        ctx.fillRect(x - candleW / 2, h - 2 - barH, candleW, barH);
       });
     }
-  }, [historyData, stock?.targetPrice, activeMAs]);
+  }, [historyData, stock?.targetPrice, activeMAs, chartType]);
 
   const handleSetTarget = () => {
     const value = parseFloat(targetInput);
@@ -232,8 +293,29 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           </div>
         </div>
 
-        {/* Time range + MA selectors */}
+        {/* Controls row: Chart type + Time range + MA */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
+          {/* Chart type toggle */}
+          <div className="flex bg-sa-bg rounded-lg p-0.5">
+            <button
+              onClick={() => setChartType('candle')}
+              className={`p-1.5 rounded transition-colors ${chartType === 'candle' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`}
+              title="Candlestick"
+            >
+              <BarChart3 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setChartType('line')}
+              className={`p-1.5 rounded transition-colors ${chartType === 'line' ? 'bg-sa-accent text-white' : 'text-sa-text-secondary hover:text-sa-text'}`}
+              title="Line"
+            >
+              <TrendingUp className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="w-px h-5 bg-sa-border" />
+
+          {/* Time range */}
           <div className="flex gap-1">
             {['1D', '1W', '1M', '3M', '1Y'].map((r) => (
               <button
@@ -247,16 +329,17 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
               </button>
             ))}
           </div>
-          <div className="w-px h-5 bg-sa-border mx-1" />
+
+          <div className="w-px h-5 bg-sa-border" />
+
+          {/* MA toggles */}
           <div className="flex gap-1">
             {MA_PERIODS.map((period) => (
               <button
                 key={period}
                 onClick={() => toggleMA(period)}
                 className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${
-                  activeMAs.has(period)
-                    ? 'text-white'
-                    : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'
+                  activeMAs.has(period) ? 'text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'
                 }`}
                 style={activeMAs.has(period) ? { backgroundColor: MA_COLORS[period] } : undefined}
               >
@@ -266,7 +349,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           </div>
         </div>
 
-        {/* MA Legend (only show active) */}
+        {/* MA Legend */}
         {activeMAs.size > 0 && (
           <div className="flex flex-wrap gap-3 mb-2 text-[10px]">
             {MA_PERIODS.filter(p => activeMAs.has(p)).map(period => (
@@ -279,7 +362,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
         )}
 
         {/* Chart */}
-        <canvas ref={canvasRef} className="w-full h-56 sm:h-72 mb-3" />
+        <canvas ref={canvasRef} className="w-full h-64 sm:h-80 mb-3" />
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
@@ -296,7 +379,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           ))}
         </div>
 
-        {/* Target price — fixed horizontal layout */}
+        {/* Target price */}
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -319,10 +402,10 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           )}
         </div>
 
-        {/* Show current target if set */}
+        {/* Current target info */}
         {stock.targetPrice && (
           <div className="mt-2 text-xs text-sa-alert flex items-center gap-1">
-            <span className="w-4 h-[1.5px] bg-sa-alert inline-block" style={{ borderTop: '1.5px dashed #ef4444' }} />
+            <span className="w-4 h-0 inline-block" style={{ borderTop: '1.5px dashed #ef4444' }} />
             {t('targetPrice')}: ${stock.targetPrice.toFixed(2)}
             {priceData && (
               <span className="text-sa-text-secondary ml-1">
