@@ -78,14 +78,10 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
     const h = rect.height;
     const closePrices = historyData.map(d => d.close);
 
-    // Extend price range to include target price if set
-    let minP = Math.min(...closePrices);
-    let maxP = Math.max(...closePrices);
+    if (closePrices.length < 2) return;
+    const minP = Math.min(...closePrices);
+    const maxP = Math.max(...closePrices);
     const targetPrice = stock?.targetPrice;
-    if (targetPrice) {
-      minP = Math.min(minP, targetPrice * 0.995);
-      maxP = Math.max(maxP, targetPrice * 1.005);
-    }
     const rangeP = maxP - minP || 1;
     const padding = 8;
 
@@ -155,7 +151,16 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
 
     // Target line (always visible — range extended above)
     if (targetPrice) {
-      const targetY = priceToY(targetPrice);
+      const inRange = targetPrice >= minP && targetPrice <= maxP;
+      let targetY: number;
+      if (inRange) {
+        targetY = priceToY(targetPrice);
+      } else if (targetPrice > maxP) {
+        targetY = padding + 4; // pin to top
+      } else {
+        targetY = h - padding - 4; // pin to bottom
+      }
+
       ctx.beginPath();
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1.5;
@@ -166,11 +171,12 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       ctx.setLineDash([]);
 
       // Target label with background
-      const label = `Target: $${targetPrice.toFixed(2)}`;
+      const arrow = targetPrice > maxP ? ' ↑' : targetPrice < minP ? ' ↓' : '';
+      const label = `Target: $${targetPrice.toFixed(2)}${arrow}`;
       ctx.font = 'bold 11px Inter, sans-serif';
       const textWidth = ctx.measureText(label).width;
       const labelX = w - textWidth - 10;
-      const labelY = targetY - 5;
+      const labelY = targetPrice > maxP ? targetY + 14 : targetY - 5;
       ctx.fillStyle = 'rgba(239,68,68,0.15)';
       ctx.fillRect(labelX - 4, labelY - 12, textWidth + 8, 16);
       ctx.fillStyle = '#ef4444';

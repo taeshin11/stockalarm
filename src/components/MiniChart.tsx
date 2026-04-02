@@ -49,19 +49,16 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
     const w = rect.width;
     const h = rect.height;
     const closePrices = historyData.map(d => d.close);
-    let minP = Math.min(...closePrices);
-    let maxP = Math.max(...closePrices);
-    // Extend range to always show target line
-    if (stock.targetPrice) {
-      minP = Math.min(minP, stock.targetPrice * 0.998);
-      maxP = Math.max(maxP, stock.targetPrice * 1.002);
-    }
+    if (closePrices.length < 2) return;
+    const minP = Math.min(...closePrices);
+    const maxP = Math.max(...closePrices);
     const priceRange = maxP - minP || 1;
     const padding = 4;
     const priceToY = (p: number) => h - padding - ((p - minP) / priceRange) * (h - padding * 2);
 
-    // Price line
     ctx.clearRect(0, 0, w, h);
+
+    // Price line
     ctx.beginPath();
     ctx.strokeStyle = isUp ? '#4ade80' : '#f87171';
     ctx.lineWidth = 1.5;
@@ -84,9 +81,17 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Target line — always visible
+    // Target line — clamp to chart area, don't stretch chart range
     if (stock.targetPrice) {
-      const targetY = priceToY(stock.targetPrice);
+      let targetY: number;
+      const inRange = stock.targetPrice >= minP && stock.targetPrice <= maxP;
+      if (inRange) {
+        targetY = priceToY(stock.targetPrice);
+      } else if (stock.targetPrice > maxP) {
+        targetY = padding + 2; // pin to top
+      } else {
+        targetY = h - padding - 2; // pin to bottom
+      }
       ctx.beginPath();
       ctx.strokeStyle = '#ef4444';
       ctx.lineWidth = 1;
@@ -95,6 +100,11 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
       ctx.lineTo(w, targetY);
       ctx.stroke();
       ctx.setLineDash([]);
+
+      // Small label
+      ctx.fillStyle = '#ef4444';
+      ctx.font = '9px Inter, sans-serif';
+      ctx.fillText('$' + stock.targetPrice.toFixed(0), w - 35, targetY - 3);
     }
   }, [historyData, stock.targetPrice, isUp]);
 
