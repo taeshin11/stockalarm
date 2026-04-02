@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
-import { X, BarChart3, TrendingUp, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { X, BarChart3, TrendingUp, ZoomIn, ZoomOut, RotateCcw, ChevronDown } from 'lucide-react';
 import { useWatchlistStore } from '@/store/useWatchlistStore';
 import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/stockApi';
 
@@ -55,6 +55,13 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
   const [activeMAs, setActiveMAs] = useState<Set<number>>(new Set([5, 20]));
   const [chartType, setChartType] = useState<'candle' | 'line'>('candle');
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [showMAControls, setShowMAControls] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Default MA controls visible on desktop
+  useEffect(() => {
+    setShowMAControls(window.innerWidth >= 640);
+  }, []);
 
   // Viewport state: which slice of data is visible
   const [viewStart, setViewStart] = useState(0); // index of first visible bar
@@ -66,6 +73,7 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
 
   // Load primary data
   useEffect(() => {
+    setLoading(true);
     fetchHistoricalData(ticker, range).then(data => {
       setHistoryData(data);
       // Also fetch extended data for scroll-back
@@ -73,9 +81,12 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
       if (extRange) {
         fetchHistoricalData(ticker, extRange).then(ext => {
           setExtendedData(ext);
-        });
+          setLoading(false);
+        }).catch(() => setLoading(false));
+      } else {
+        setLoading(false);
       }
-    });
+    }).catch(() => setLoading(false));
   }, [ticker, range]);
 
   // Merge extended + primary data (extended has older data)
@@ -447,23 +458,12 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           </div>
           <div className="w-px h-5 bg-sa-border" />
 
-          {/* Zoom controls */}
-          <div className="flex gap-1">
-            <button onClick={() => zoom(0.7)} className="p-1.5 bg-sa-bg rounded text-sa-text-secondary hover:text-sa-text" title="Zoom In">
-              <ZoomIn className="w-3.5 h-3.5" />
+          {/* MA toggles — collapsible */}
+          <div className="flex items-center gap-1">
+            <button onClick={() => setShowMAControls(v => !v)} className={`flex items-center gap-0.5 px-2 py-1 rounded text-xs font-medium transition-colors ${showMAControls ? 'bg-sa-accent text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`}>
+              MA <ChevronDown className={`w-3 h-3 transition-transform ${showMAControls ? 'rotate-180' : ''}`} />
             </button>
-            <button onClick={() => zoom(1.4)} className="p-1.5 bg-sa-bg rounded text-sa-text-secondary hover:text-sa-text" title="Zoom Out">
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={resetView} className="p-1.5 bg-sa-bg rounded text-sa-text-secondary hover:text-sa-text" title="Reset">
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="w-px h-5 bg-sa-border" />
-
-          {/* MA toggles */}
-          <div className="flex gap-1">
-            {MA_PERIODS.map(period => (
+            {showMAControls && MA_PERIODS.map(period => (
               <button key={period} onClick={() => toggleMA(period)} className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${activeMAs.has(period) ? 'text-white' : 'bg-sa-bg text-sa-text-secondary hover:text-sa-text'}`} style={activeMAs.has(period) ? { backgroundColor: MA_COLORS[period] } : undefined}>
                 MA{period}
               </button>
@@ -483,21 +483,37 @@ export default function ExpandedChart({ ticker, onClose }: ExpandedChartProps) {
           </div>
         )}
 
-        {/* Interactive hint */}
-        <p className="text-[10px] text-sa-text-secondary/50 mb-1">↔ Drag to scroll · Scroll/pinch to zoom</p>
-
-        {/* Chart Canvas — interactive */}
-        <canvas
-          ref={canvasRef}
-          className="w-full h-64 sm:h-80 mb-3 cursor-grab active:cursor-grabbing touch-none"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onWheel={handleWheel}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-        />
+        {/* Chart Canvas — interactive, with zoom overlay */}
+        <div className="relative mb-3">
+          {loading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-sa-card/80 rounded-lg">
+              <div className="w-full h-full animate-pulse bg-gradient-to-r from-sa-bg via-sa-border/30 to-sa-bg rounded-lg" />
+            </div>
+          )}
+          {/* Zoom controls overlay — top-right on canvas */}
+          <div className="absolute top-2 right-2 z-10 flex gap-1 bg-black/40 backdrop-blur-sm rounded-lg p-1">
+            <button onClick={() => zoom(0.7)} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Zoom In">
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => zoom(1.4)} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Zoom Out">
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={resetView} className="p-1.5 rounded text-white/70 hover:text-white hover:bg-white/10 transition-colors" title="Reset">
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <canvas
+            ref={canvasRef}
+            className="w-full h-64 sm:h-80 cursor-grab active:cursor-grabbing touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onWheel={handleWheel}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+          />
+        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">

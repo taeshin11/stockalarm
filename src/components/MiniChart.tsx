@@ -132,7 +132,7 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
       onClick={() => {
         if (stock.alertTriggered) {
           dismissAlert(stock.ticker);
-        } else if (!showTargetInput) {
+        } else if (!showTargetInput && !showSmartAlert) {
           onExpand();
         }
       }}
@@ -149,7 +149,7 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
       <div className="flex items-center justify-between mb-2">
         <div>
           <span className="text-sm font-bold text-sa-text">{stock.ticker}</span>
-          <span className="text-xs text-sa-text-secondary ml-2 hidden sm:inline">{stock.name}</span>
+          <span className="text-xs text-sa-text-secondary ml-2 truncate max-w-[120px] inline-block align-middle">{stock.name}</span>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
@@ -175,7 +175,11 @@ export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps
       </div>
 
       {/* Chart canvas */}
-      <canvas ref={canvasRef} className="w-full h-20 mb-2" />
+      {historyData.length === 0 ? (
+        <div className="w-full h-20 mb-2 bg-sa-border/20 rounded animate-pulse" />
+      ) : (
+        <canvas ref={canvasRef} className="w-full h-20 mb-2" />
+      )}
 
       {/* Target price */}
       {stock.targetPrice && !showTargetInput && (
