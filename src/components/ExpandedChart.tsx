@@ -71,7 +71,7 @@ function calcIndicator(data: number[], ind: Indicator): (number | null)[] {
 }
 
 const EXTENDED_RANGES: Record<string, string> = {
-  '1D': '5d', '1W': '1mo', '1M': '6mo', '3M': '1y', '1Y': '5y',
+  '1D': '1mo', '1W': '3mo', '1M': '1y', '3M': '2y', '1Y': '10y',
 };
 
 function getCurrency(ticker: string): string {

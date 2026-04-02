@@ -13,6 +13,7 @@ import { checkSmartAlerts } from '@/lib/smartAlert';
 import ChartGrid from '@/components/ChartGrid';
 import AddStockModal from '@/components/AddStockModal';
 import SettingsPanel from '@/components/SettingsPanel';
+import DemoPreview from '@/components/DemoPreview';
 import FeedbackButton from '@/components/FeedbackButton';
 import ExpandedChart from '@/components/ExpandedChart';
 import Footer from '@/components/Footer';
@@ -171,42 +172,8 @@ export default function HomePage() {
               </button>
             </div>
 
-            {/* Demo preview cards */}
-            <div className="w-full max-w-4xl mx-auto mb-16">
-              <p className="text-xs text-sa-text-secondary text-center mb-4 uppercase tracking-wider">Preview — your dashboard will look like this</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { ticker: 'AAPL', name: 'Apple Inc.', price: '198.36', change: '+1.24', pct: '+0.63%', up: true },
-                  { ticker: 'NVDA', name: 'NVIDIA Corp.', price: '124.57', change: '+3.81', pct: '+3.16%', up: true },
-                  { ticker: 'TSLA', name: 'Tesla Inc.', price: '271.48', change: '-4.32', pct: '-1.57%', up: false },
-                  { ticker: 'MSFT', name: 'Microsoft', price: '428.50', change: '+0.92', pct: '+0.21%', up: true },
-                ].map((demo) => (
-                  <div key={demo.ticker} className="border border-sa-border rounded-lg p-3 bg-sa-card opacity-70 pointer-events-none select-none">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-bold text-sa-text text-sm">{demo.ticker}</span>
-                      <span className={`text-xs font-medium ${demo.up ? 'text-green-400' : 'text-red-400'}`}>{demo.pct}</span>
-                    </div>
-                    <div className="text-lg font-semibold text-sa-text mb-1">${demo.price}</div>
-                    <div className={`text-xs ${demo.up ? 'text-green-400' : 'text-red-400'}`}>{demo.change}</div>
-                    {/* Fake sparkline */}
-                    <svg viewBox="0 0 100 30" className="w-full h-8 mt-2" preserveAspectRatio="none">
-                      <polyline
-                        fill="none"
-                        stroke={demo.up ? '#22c55e' : '#ef4444'}
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={demo.up
-                          ? '0,22 10,20 20,24 30,18 40,20 50,15 60,17 70,12 80,14 90,10 100,8'
-                          : '0,8 10,12 20,10 30,14 40,12 50,18 60,15 70,20 80,18 90,22 100,24'
-                        }
-                      />
-                    </svg>
-                    <p className="text-[10px] text-sa-text-secondary mt-1">{demo.name}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Live demo preview cards */}
+            <DemoPreview />
 
             {/* Features section */}
             <div className="w-full max-w-3xl mx-auto pb-16">

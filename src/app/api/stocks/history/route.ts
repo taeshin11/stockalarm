@@ -5,10 +5,19 @@ const HISTORY_CACHE_TTL = 60000; // 1 minute
 
 const rangeToInterval: Record<string, { range: string; interval: string }> = {
   '1D': { range: '1d', interval: '5m' },
+  '5d': { range: '5d', interval: '15m' },
   '1W': { range: '5d', interval: '15m' },
   '1M': { range: '1mo', interval: '1d' },
+  '1mo': { range: '1mo', interval: '1d' },
   '3M': { range: '3mo', interval: '1d' },
+  '3mo': { range: '3mo', interval: '1d' },
+  '6mo': { range: '6mo', interval: '1d' },
   '1Y': { range: '1y', interval: '1wk' },
+  '1y': { range: '1y', interval: '1wk' },
+  '2y': { range: '2y', interval: '1wk' },
+  '5y': { range: '5y', interval: '1mo' },
+  '10y': { range: '10y', interval: '1mo' },
+  'max': { range: 'max', interval: '1mo' },
 };
 
 async function fetchYahooChart(ticker: string, yahooRange: string, interval: string) {
