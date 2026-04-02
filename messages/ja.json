@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "title": "StockAlarm — 無料マルチチャート価格アラートダッシュボード",
+    "description": "最大12銘柄を同時にモニタリング。リアルタイムチャートと即時価格目標アラート。永久無料。"
+  },
+  "nav": {
+    "addStock": "銘柄追加",
+    "settings": "設定",
+    "howToUse": "使い方"
+  },
+  "hero": {
+    "title": "複数の銘柄を追跡。",
+    "titleAccent": "即座にアラートを受信。",
+    "subtitle": "1画面で最大12銘柄をモニタリング。目標価格を設定。価格到達時に視覚・音声アラート。",
+    "cta": "追跡を開始",
+    "secondaryCta": "使い方"
+  },
+  "chart": {
+    "targetPrice": "目標価格",
+    "setTarget": "目標設定",
+    "removeTarget": "削除",
+    "currentPrice": "現在値",
+    "change": "変動",
+    "high": "高値",
+    "low": "安値",
+    "volume": "出来高",
+    "marketClosed": "市場閉鎖",
+    "lastUpdated": "更新",
+    "noStocks": "銘柄が追加されていません",
+    "addFirst": "最初の銘柄を追加して追跡を開始しましょう",
+    "alertTriggered": "目標価格到達！",
+    "expand": "チャートを拡大",
+    "collapse": "閉じる"
+  },
+  "addStock": {
+    "title": "銘柄追加",
+    "search": "ティッカーまたは会社名で検索...",
+    "popular": "人気銘柄",
+    "add": "追加",
+    "cancel": "キャンセル",
+    "maxReached": "最大12銘柄に達しました"
+  },
+  "settings": {
+    "title": "設定",
+    "alertSound": "アラート音",
+    "refreshInterval": "更新間隔",
+    "seconds": "秒",
+    "testSound": "テスト",
+    "close": "閉じる"
+  },
+  "feedback": {
+    "title": "フィードバックを送信",
+    "message": "メッセージを入力...",
+    "email": "メール（任意）",
+    "send": "送信",
+    "thanks": "フィードバックありがとうございます！",
+    "error": "送信に失敗しました。もう一度お試しください。"
+  },
+  "howToUse": {
+    "title": "StockAlarmの使い方",
+    "step1Title": "銘柄を追加",
+    "step1Desc": "「+ 銘柄追加」ボタンをクリックし、ティッカーシンボルを検索します。最大12銘柄をウォッチリストに追加できます。",
+    "step2Title": "目標価格を設定",
+    "step2Desc": "チャートカードをクリックし、買いまたは売りの目標価格を入力します。赤い点線がチャートに表示されます。",
+    "step3Title": "アラートを受信",
+    "step3Desc": "株価が目標価格に達すると、チャートが光りアラーム音が鳴ります。もうエントリーポイントを見逃しません。",
+    "backHome": "ダッシュボードに戻る"
+  },
+  "footer": {
+    "builtBy": "開発",
+    "rights": "All rights reserved.",
+    "feedback": "フィードバック",
+    "howToUse": "使い方"
+  },
+  "time": {
+    "1D": "1日",
+    "1W": "1週",
+    "1M": "1ヶ月",
+    "3M": "3ヶ月",
+    "1Y": "1年"
+  }
+}

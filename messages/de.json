@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "title": "StockAlarm — Kostenloses Multi-Chart Preisalarm-Dashboard",
+    "description": "Überwachen Sie bis zu 12 Aktien gleichzeitig mit Echtzeit-Charts und sofortigen Preisziel-Alarmen. Für immer kostenlos."
+  },
+  "nav": {
+    "addStock": "Aktie hinzufügen",
+    "settings": "Einstellungen",
+    "howToUse": "Anleitung"
+  },
+  "hero": {
+    "title": "Mehrere Aktien verfolgen.",
+    "titleAccent": "Sofortige Alarme erhalten.",
+    "subtitle": "Überwachen Sie bis zu 12 Aktien auf einem Bildschirm. Setzen Sie Zielpreise. Erhalten Sie visuelle und akustische Alarme bei Zielerreichung.",
+    "cta": "Tracking starten",
+    "secondaryCta": "So funktioniert's"
+  },
+  "chart": {
+    "targetPrice": "Zielpreis",
+    "setTarget": "Ziel setzen",
+    "removeTarget": "Entfernen",
+    "currentPrice": "Aktuell",
+    "change": "Änderung",
+    "high": "Hoch",
+    "low": "Tief",
+    "volume": "Volumen",
+    "marketClosed": "Markt geschlossen",
+    "lastUpdated": "Aktualisiert",
+    "noStocks": "Noch keine Aktien hinzugefügt",
+    "addFirst": "Fügen Sie Ihre erste Aktie hinzu, um das Tracking zu starten",
+    "alertTriggered": "Ziel erreicht!",
+    "expand": "Chart vergrößern",
+    "collapse": "Schließen"
+  },
+  "addStock": {
+    "title": "Aktie hinzufügen",
+    "search": "Nach Ticker oder Firmenname suchen...",
+    "popular": "Beliebt",
+    "add": "Hinzufügen",
+    "cancel": "Abbrechen",
+    "maxReached": "Maximum von 12 Aktien erreicht"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "alertSound": "Alarmton",
+    "refreshInterval": "Aktualisierungsintervall",
+    "seconds": "Sekunden",
+    "testSound": "Testen",
+    "close": "Schließen"
+  },
+  "feedback": {
+    "title": "Feedback senden",
+    "message": "Ihre Nachricht...",
+    "email": "E-Mail (optional)",
+    "send": "Senden",
+    "thanks": "Vielen Dank für Ihr Feedback!",
+    "error": "Senden fehlgeschlagen. Bitte versuchen Sie es erneut."
+  },
+  "howToUse": {
+    "title": "So verwenden Sie StockAlarm",
+    "step1Title": "Aktien hinzufügen",
+    "step1Desc": "Klicken Sie auf '+ Aktie hinzufügen' und suchen Sie nach einem Tickersymbol. Fügen Sie bis zu 12 Aktien zu Ihrer Watchlist hinzu.",
+    "step2Title": "Zielpreise festlegen",
+    "step2Desc": "Klicken Sie auf eine Chart-Karte und geben Sie Ihren Kauf- oder Verkaufszielpreis ein. Eine rote gestrichelte Linie erscheint im Chart.",
+    "step3Title": "Alarme erhalten",
+    "step3Desc": "Wenn ein Aktienkurs Ihr Ziel erreicht, leuchtet der Chart auf und ein Alarmton ertönt. Verpassen Sie nie wieder einen Einstiegspunkt.",
+    "backHome": "Zurück zum Dashboard"
+  },
+  "footer": {
+    "builtBy": "Entwickelt von",
+    "rights": "Alle Rechte vorbehalten.",
+    "feedback": "Feedback",
+    "howToUse": "Anleitung"
+  },
+  "time": {
+    "1D": "1T",
+    "1W": "1W",
+    "1M": "1M",
+    "3M": "3M",
+    "1Y": "1J"
+  }
+}

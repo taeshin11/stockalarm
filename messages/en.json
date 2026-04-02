@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "title": "StockAlarm — Free Multi-Chart Price Alert Dashboard",
+    "description": "Monitor up to 12 stocks simultaneously with real-time charts and instant price target alerts. Free forever."
+  },
+  "nav": {
+    "addStock": "Add Stock",
+    "settings": "Settings",
+    "howToUse": "How to Use"
+  },
+  "hero": {
+    "title": "Track Multiple Stocks.",
+    "titleAccent": "Get Instant Alerts.",
+    "subtitle": "Monitor up to 12 stocks on one screen. Set target prices. Get visual and audio alerts when prices hit your targets.",
+    "cta": "Start Tracking",
+    "secondaryCta": "How It Works"
+  },
+  "chart": {
+    "targetPrice": "Target Price",
+    "setTarget": "Set Target",
+    "removeTarget": "Remove",
+    "currentPrice": "Current",
+    "change": "Change",
+    "high": "High",
+    "low": "Low",
+    "volume": "Volume",
+    "marketClosed": "Market Closed",
+    "lastUpdated": "Updated",
+    "noStocks": "No stocks added yet",
+    "addFirst": "Add your first stock to start tracking",
+    "alertTriggered": "Target Reached!",
+    "expand": "Expand Chart",
+    "collapse": "Close"
+  },
+  "addStock": {
+    "title": "Add Stock",
+    "search": "Search by ticker or company name...",
+    "popular": "Popular",
+    "add": "Add",
+    "cancel": "Cancel",
+    "maxReached": "Maximum 12 stocks reached"
+  },
+  "settings": {
+    "title": "Settings",
+    "alertSound": "Alert Sound",
+    "refreshInterval": "Refresh Interval",
+    "seconds": "seconds",
+    "testSound": "Test",
+    "close": "Close"
+  },
+  "feedback": {
+    "title": "Send Feedback",
+    "message": "Your message...",
+    "email": "Email (optional)",
+    "send": "Send",
+    "thanks": "Thank you for your feedback!",
+    "error": "Failed to send. Please try again."
+  },
+  "howToUse": {
+    "title": "How to Use StockAlarm",
+    "step1Title": "Add Stocks",
+    "step1Desc": "Click the '+ Add Stock' button and search for any ticker symbol. Add up to 12 stocks to your watchlist.",
+    "step2Title": "Set Target Prices",
+    "step2Desc": "Click on any chart card and enter your buy or sell target price. A red dashed line will appear on the chart.",
+    "step3Title": "Get Alerts",
+    "step3Desc": "When a stock price reaches your target, the chart will glow and an alarm sound will play. Never miss an entry point again.",
+    "backHome": "Back to Dashboard"
+  },
+  "footer": {
+    "builtBy": "Built by",
+    "rights": "All rights reserved.",
+    "feedback": "Feedback",
+    "howToUse": "How to Use"
+  },
+  "time": {
+    "1D": "1D",
+    "1W": "1W",
+    "1M": "1M",
+    "3M": "3M",
+    "1Y": "1Y"
+  }
+}

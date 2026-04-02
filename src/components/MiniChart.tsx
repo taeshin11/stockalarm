@@ -1,0 +1,210 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { useTranslations } from 'next-intl';
+import { X, Maximize2, Bell } from 'lucide-react';
+import { WatchlistStock, PriceData, useWatchlistStore } from '@/store/useWatchlistStore';
+import { collectData } from '@/lib/analytics';
+import { fetchHistoricalData, HistoricalDataPoint } from '@/lib/stockApi';
+
+interface MiniChartProps {
+  stock: WatchlistStock;
+  priceData?: PriceData;
+  onExpand: () => void;
+}
+
+export default function MiniChart({ stock, priceData, onExpand }: MiniChartProps) {
+  const t = useTranslations('chart');
+  const { removeStock, setTargetPrice, dismissAlert } = useWatchlistStore();
+  const [targetInput, setTargetInput] = useState('');
+  const [showTargetInput, setShowTargetInput] = useState(false);
+  const [historyData, setHistoryData] = useState<HistoricalDataPoint[]>([]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const price = priceData?.price ?? 0;
+  const change = priceData?.change ?? 0;
+  const changePercent = priceData?.changePercent ?? 0;
+  const isUp = change >= 0;
+
+  useEffect(() => {
+    fetchHistoricalData(stock.ticker, '1M').then(setHistoryData);
+  }, [stock.ticker]);
+
+  // Draw mini chart on canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || historyData.length < 2) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const h = rect.height;
+    const prices = historyData.map(d => d.close);
+    const minP = Math.min(...prices);
+    const maxP = Math.max(...prices);
+    const range = maxP - minP || 1;
+    const padding = 4;
+
+    // Price line
+    ctx.clearRect(0, 0, w, h);
+    ctx.beginPath();
+    ctx.strokeStyle = isUp ? '#4ade80' : '#f87171';
+    ctx.lineWidth = 1.5;
+
+    prices.forEach((p, i) => {
+      const x = (i / (prices.length - 1)) * w;
+      const y = h - padding - ((p - minP) / range) * (h - padding * 2);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Gradient fill
+    const gradient = ctx.createLinearGradient(0, 0, 0, h);
+    gradient.addColorStop(0, isUp ? 'rgba(74,222,128,0.15)' : 'rgba(248,113,113,0.15)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.lineTo(w, h);
+    ctx.lineTo(0, h);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Target line
+    if (stock.targetPrice && stock.targetPrice >= minP && stock.targetPrice <= maxP) {
+      const targetY = h - padding - ((stock.targetPrice - minP) / range) * (h - padding * 2);
+      ctx.beginPath();
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(0, targetY);
+      ctx.lineTo(w, targetY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }, [historyData, stock.targetPrice, isUp]);
+
+  const handleSetTarget = () => {
+    const value = parseFloat(targetInput);
+    if (!isNaN(value) && value > 0) {
+      setTargetPrice(stock.ticker, value);
+      collectData('setTarget', { ticker: stock.ticker, targetPrice: value });
+      setShowTargetInput(false);
+      setTargetInput('');
+    }
+  };
+
+  const handleRemove = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    removeStock(stock.ticker);
+    collectData('removeStock', { ticker: stock.ticker });
+  };
+
+  return (
+    <div
+      className={`sa-card p-4 cursor-pointer transition-all hover:border-sa-accent/50 relative group ${
+        stock.alertTriggered && !stock.alertDismissed ? 'alert-glow' : ''
+      }`}
+      onClick={() => {
+        if (stock.alertTriggered) {
+          dismissAlert(stock.ticker);
+        } else if (!showTargetInput) {
+          onExpand();
+        }
+      }}
+    >
+      {/* Alert badge */}
+      {stock.alertTriggered && !stock.alertDismissed && (
+        <div className="absolute -top-2 -right-2 bg-sa-alert text-white text-[10px] font-bold px-2 py-0.5 rounded-full alert-bounce flex items-center gap-1">
+          <Bell className="w-3 h-3" />
+          {t('alertTriggered')}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <span className="text-sm font-bold text-sa-text">{stock.ticker}</span>
+          <span className="text-xs text-sa-text-secondary ml-2 hidden sm:inline">{stock.name}</span>
+        </div>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); onExpand(); }}
+            className="p-1 hover:bg-sa-bg rounded"
+          >
+            <Maximize2 className="w-3 h-3 text-sa-text-secondary" />
+          </button>
+          <button onClick={handleRemove} className="p-1 hover:bg-sa-bg rounded">
+            <X className="w-3 h-3 text-sa-text-secondary" />
+          </button>
+        </div>
+      </div>
+
+      {/* Price */}
+      <div className="flex items-baseline gap-2 mb-2">
+        <span className="text-xl font-bold text-sa-text">
+          ${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+        <span className={`text-xs font-medium ${isUp ? 'text-sa-up' : 'text-sa-down'}`}>
+          {isUp ? '+' : ''}{change.toFixed(2)} ({isUp ? '+' : ''}{changePercent.toFixed(2)}%)
+        </span>
+      </div>
+
+      {/* Chart canvas */}
+      <canvas ref={canvasRef} className="w-full h-20 mb-2" />
+
+      {/* Target price */}
+      {stock.targetPrice && !showTargetInput && (
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-sa-alert">
+            {t('targetPrice')}: ${stock.targetPrice.toFixed(2)}
+          </span>
+          <button
+            onClick={(e) => { e.stopPropagation(); setTargetPrice(stock.ticker, undefined); }}
+            className="text-sa-text-secondary hover:text-sa-alert"
+          >
+            {t('removeTarget')}
+          </button>
+        </div>
+      )}
+
+      {/* Target input */}
+      {!stock.targetPrice && !showTargetInput && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowTargetInput(true); }}
+          className="text-xs text-sa-text-secondary hover:text-sa-accent w-full text-left"
+        >
+          + {t('setTarget')}
+        </button>
+      )}
+
+      {showTargetInput && (
+        <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+          <input
+            type="number"
+            value={targetInput}
+            onChange={(e) => setTargetInput(e.target.value)}
+            placeholder={t('targetPrice')}
+            className="flex-1 bg-sa-bg border border-sa-border rounded px-2 py-1 text-xs text-sa-text outline-none focus:border-sa-accent"
+            autoFocus
+            onKeyDown={(e) => e.key === 'Enter' && handleSetTarget()}
+          />
+          <button onClick={handleSetTarget} className="text-xs text-sa-accent font-medium">
+            {t('setTarget')}
+          </button>
+        </div>
+      )}
+
+      {/* Market status */}
+      {priceData && !priceData.marketOpen && (
+        <div className="text-[10px] text-sa-text-secondary mt-1">{t('marketClosed')}</div>
+      )}
+    </div>
+  );
+}

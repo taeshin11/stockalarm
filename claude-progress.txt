@@ -1,0 +1,9 @@
+# StockAlarm Progress
+## Completed
+- [x] Feature 1: Project scaffold (Next.js 14 + TypeScript + Tailwind)
+
+## In Progress
+- [ ] Feature 3: i18n auto-detection
+
+## Pending
+- Features 2, 4-20

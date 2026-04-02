@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "title": "StockAlarm — 免费多图表价格预警仪表盘",
+    "description": "同时监控多达12只股票，实时图表和即时价格目标预警。永久免费。"
+  },
+  "nav": {
+    "addStock": "添加股票",
+    "settings": "设置",
+    "howToUse": "使用指南"
+  },
+  "hero": {
+    "title": "追踪多只股票。",
+    "titleAccent": "即时获取提醒。",
+    "subtitle": "在一个屏幕上监控多达12只股票。设置目标价格。价格达标时获取视觉和声音提醒。",
+    "cta": "开始追踪",
+    "secondaryCta": "使用方法"
+  },
+  "chart": {
+    "targetPrice": "目标价",
+    "setTarget": "设置目标",
+    "removeTarget": "移除",
+    "currentPrice": "当前价",
+    "change": "涨跌",
+    "high": "最高",
+    "low": "最低",
+    "volume": "成交量",
+    "marketClosed": "休市",
+    "lastUpdated": "已更新",
+    "noStocks": "尚未添加股票",
+    "addFirst": "添加您的第一只股票开始追踪",
+    "alertTriggered": "目标达成！",
+    "expand": "放大图表",
+    "collapse": "关闭"
+  },
+  "addStock": {
+    "title": "添加股票",
+    "search": "按股票代码或公司名称搜索...",
+    "popular": "热门股票",
+    "add": "添加",
+    "cancel": "取消",
+    "maxReached": "已达到12只股票上限"
+  },
+  "settings": {
+    "title": "设置",
+    "alertSound": "提醒声音",
+    "refreshInterval": "刷新间隔",
+    "seconds": "秒",
+    "testSound": "测试",
+    "close": "关闭"
+  },
+  "feedback": {
+    "title": "发送反馈",
+    "message": "请输入您的消息...",
+    "email": "邮箱（可选）",
+    "send": "发送",
+    "thanks": "感谢您的反馈！",
+    "error": "发送失败，请重试。"
+  },
+  "howToUse": {
+    "title": "如何使用StockAlarm",
+    "step1Title": "添加股票",
+    "step1Desc": "点击'+ 添加股票'按钮，搜索任意股票代码。最多可将12只股票添加到您的关注列表。",
+    "step2Title": "设置目标价",
+    "step2Desc": "点击任意图表卡片，输入您的买入或卖出目标价。红色虚线将显示在图表上。",
+    "step3Title": "获取提醒",
+    "step3Desc": "当股价达到您的目标时，图表将发光并播放警报声。再也不会错过入场时机。",
+    "backHome": "返回仪表盘"
+  },
+  "footer": {
+    "builtBy": "开发者",
+    "rights": "All rights reserved.",
+    "feedback": "反馈",
+    "howToUse": "使用指南"
+  },
+  "time": {
+    "1D": "1日",
+    "1W": "1周",
+    "1M": "1月",
+    "3M": "3月",
+    "1Y": "1年"
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "title": "StockAlarm — Panel Gratuito de Alertas de Precios Multi-Gráfico",
+    "description": "Monitorea hasta 12 acciones simultáneamente con gráficos en tiempo real y alertas instantáneas de precios objetivo. Gratis para siempre."
+  },
+  "nav": {
+    "addStock": "Agregar Acción",
+    "settings": "Configuración",
+    "howToUse": "Cómo Usar"
+  },
+  "hero": {
+    "title": "Rastrea Múltiples Acciones.",
+    "titleAccent": "Recibe Alertas Instantáneas.",
+    "subtitle": "Monitorea hasta 12 acciones en una pantalla. Establece precios objetivo. Recibe alertas visuales y sonoras cuando los precios alcancen tus metas.",
+    "cta": "Comenzar a Rastrear",
+    "secondaryCta": "Cómo Funciona"
+  },
+  "chart": {
+    "targetPrice": "Precio Objetivo",
+    "setTarget": "Establecer Objetivo",
+    "removeTarget": "Eliminar",
+    "currentPrice": "Actual",
+    "change": "Cambio",
+    "high": "Máximo",
+    "low": "Mínimo",
+    "volume": "Volumen",
+    "marketClosed": "Mercado Cerrado",
+    "lastUpdated": "Actualizado",
+    "noStocks": "No se han agregado acciones",
+    "addFirst": "Agrega tu primera acción para comenzar a rastrear",
+    "alertTriggered": "¡Objetivo Alcanzado!",
+    "expand": "Ampliar Gráfico",
+    "collapse": "Cerrar"
+  },
+  "addStock": {
+    "title": "Agregar Acción",
+    "search": "Buscar por ticker o nombre de empresa...",
+    "popular": "Populares",
+    "add": "Agregar",
+    "cancel": "Cancelar",
+    "maxReached": "Máximo de 12 acciones alcanzado"
+  },
+  "settings": {
+    "title": "Configuración",
+    "alertSound": "Sonido de Alerta",
+    "refreshInterval": "Intervalo de Actualización",
+    "seconds": "segundos",
+    "testSound": "Probar",
+    "close": "Cerrar"
+  },
+  "feedback": {
+    "title": "Enviar Comentarios",
+    "message": "Tu mensaje...",
+    "email": "Correo electrónico (opcional)",
+    "send": "Enviar",
+    "thanks": "¡Gracias por tus comentarios!",
+    "error": "Error al enviar. Por favor, inténtalo de nuevo."
+  },
+  "howToUse": {
+    "title": "Cómo Usar StockAlarm",
+    "step1Title": "Agregar Acciones",
+    "step1Desc": "Haz clic en el botón '+ Agregar Acción' y busca cualquier símbolo de ticker. Agrega hasta 12 acciones a tu lista de seguimiento.",
+    "step2Title": "Establecer Precios Objetivo",
+    "step2Desc": "Haz clic en cualquier tarjeta de gráfico e ingresa tu precio objetivo de compra o venta. Una línea roja discontinua aparecerá en el gráfico.",
+    "step3Title": "Recibir Alertas",
+    "step3Desc": "Cuando el precio de una acción alcance tu objetivo, el gráfico brillará y sonará una alarma. Nunca más pierdas un punto de entrada.",
+    "backHome": "Volver al Panel"
+  },
+  "footer": {
+    "builtBy": "Creado por",
+    "rights": "Todos los derechos reservados.",
+    "feedback": "Comentarios",
+    "howToUse": "Cómo Usar"
+  },
+  "time": {
+    "1D": "1D",
+    "1W": "1S",
+    "1M": "1M",
+    "3M": "3M",
+    "1Y": "1A"
+  }
+}

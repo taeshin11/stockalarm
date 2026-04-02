@@ -1,0 +1,82 @@
+{
+  "metadata": {
+    "title": "StockAlarm — 무료 멀티차트 가격 알림 대시보드",
+    "description": "최대 12개 종목을 동시에 모니터링하고, 실시간 차트와 즉각적인 가격 목표 알림을 받으세요. 영원히 무료."
+  },
+  "nav": {
+    "addStock": "종목 추가",
+    "settings": "설정",
+    "howToUse": "사용법"
+  },
+  "hero": {
+    "title": "여러 종목을 한눈에.",
+    "titleAccent": "즉시 알림 받기.",
+    "subtitle": "한 화면에서 최대 12개 종목 모니터링. 목표가 설정. 가격 도달 시 시각 및 소리 알림.",
+    "cta": "추적 시작",
+    "secondaryCta": "사용 방법"
+  },
+  "chart": {
+    "targetPrice": "목표가",
+    "setTarget": "목표 설정",
+    "removeTarget": "삭제",
+    "currentPrice": "현재가",
+    "change": "변동",
+    "high": "고가",
+    "low": "저가",
+    "volume": "거래량",
+    "marketClosed": "장 마감",
+    "lastUpdated": "업데이트",
+    "noStocks": "추가된 종목이 없습니다",
+    "addFirst": "첫 번째 종목을 추가하여 추적을 시작하세요",
+    "alertTriggered": "목표가 도달!",
+    "expand": "차트 확대",
+    "collapse": "닫기"
+  },
+  "addStock": {
+    "title": "종목 추가",
+    "search": "티커 또는 회사명으로 검색...",
+    "popular": "인기 종목",
+    "add": "추가",
+    "cancel": "취소",
+    "maxReached": "최대 12개 종목까지 추가 가능합니다"
+  },
+  "settings": {
+    "title": "설정",
+    "alertSound": "알림 소리",
+    "refreshInterval": "새로고침 간격",
+    "seconds": "초",
+    "testSound": "테스트",
+    "close": "닫기"
+  },
+  "feedback": {
+    "title": "피드백 보내기",
+    "message": "메시지를 입력하세요...",
+    "email": "이메일 (선택)",
+    "send": "보내기",
+    "thanks": "피드백 감사합니다!",
+    "error": "전송 실패. 다시 시도해주세요."
+  },
+  "howToUse": {
+    "title": "StockAlarm 사용법",
+    "step1Title": "종목 추가",
+    "step1Desc": "'+ 종목 추가' 버튼을 클릭하고 티커 심볼을 검색하세요. 최대 12개까지 관심 종목을 추가할 수 있습니다.",
+    "step2Title": "목표가 설정",
+    "step2Desc": "차트 카드를 클릭하고 매수 또는 매도 목표가를 입력하세요. 빨간 점선이 차트에 표시됩니다.",
+    "step3Title": "알림 받기",
+    "step3Desc": "주가가 목표가에 도달하면 차트가 빛나고 알람 소리가 재생됩니다. 더 이상 진입 시점을 놓치지 마세요.",
+    "backHome": "대시보드로 돌아가기"
+  },
+  "footer": {
+    "builtBy": "제작",
+    "rights": "All rights reserved.",
+    "feedback": "피드백",
+    "howToUse": "사용법"
+  },
+  "time": {
+    "1D": "1일",
+    "1W": "1주",
+    "1M": "1개월",
+    "3M": "3개월",
+    "1Y": "1년"
+  }
+}
